@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>gotake editor</title>
+<link rel="stylesheet" href="static/editor.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">gotake<span>edit</span></div>
+  <div class="file"><span id="path"></span><span id="dirty" class="dirty" hidden>unsaved</span></div>
+  <div class="stats" id="stats"></div>
+  <div class="actions">
+    <button id="btn-undo" title="Undo (Ctrl+Z)">Undo</button>
+    <button id="btn-redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
+    <button id="btn-export" title="Export as GIF, SVG, HTML, PNG, text…">Export ▾</button>
+    <a id="btn-download" href="recording" download hidden></a>
+    <button id="btn-save" class="primary" title="Save (Ctrl+S)">Save</button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="left">
+    <div class="preview" id="preview"></div>
+
+    <div class="timeline-wrap">
+      <div class="timeline-head">
+        <span>Timeline</span>
+        <span class="hint">drag to select · click to seek · ctrl+wheel to zoom · wheel to pan</span>
+        <button id="btn-zoom-sel" class="small">Zoom to selection</button>
+        <button id="btn-zoom-all" class="small">Fit</button>
+      </div>
+      <canvas id="timeline" height="84"></canvas>
+      <div class="legend">
+        <span><i class="k-o"></i>output</span><span><i class="k-key"></i>keystroke</span>
+        <span><i class="k-i"></i>input</span><span><i class="k-m"></i>marker</span><span><i class="k-r"></i>resize</span>
+      </div>
+    </div>
+
+    <div class="list-wrap">
+      <div class="list-head row">
+        <span class="c-idx">#</span><span class="c-time">time</span><span class="c-delay">delay</span>
+        <span class="c-code">type</span><span class="c-data">data</span>
+      </div>
+      <div class="list" id="list" tabindex="0"><div class="list-spacer" id="list-spacer"></div></div>
+    </div>
+  </section>
+
+  <aside class="tools" id="tools">
+    <div class="sel-summary" id="sel-summary">Nothing selected</div>
+    <div class="msg" id="msg" hidden></div>
+
+    <details open id="find-panel">
+      <summary>Find &amp; replace <span class="muted kbd">Ctrl+F</span></summary>
+      <div class="field"><label>Find</label><input id="in-find" type="text" spellcheck="false" placeholder="user@host:~/path"></div>
+      <div class="field"><label>Replace with</label><input id="in-replace" type="text" spellcheck="false" placeholder="demo:~"></div>
+      <div class="checks">
+        <label title="Match the text you see, even when the shell colors parts of it. Color codes are kept."><input id="in-find-ansi" type="checkbox" checked> ignore color codes</label>
+        <label><input id="in-find-case" type="checkbox"> ignore case</label>
+        <label title="Go regexp syntax; use $1 in the replacement"><input id="in-find-regex" type="checkbox"> regex</label>
+        <label><input id="in-find-sel" type="checkbox"> only in selection</label>
+      </div>
+      <div class="find-bar">
+        <span id="find-count" class="muted">—</span>
+        <button id="btn-find-prev" class="small" title="Previous match (Shift+Enter)">▲</button>
+        <button id="btn-find-next" class="small" title="Next match (Enter)">▼</button>
+        <button data-op="replace" class="primary-soft">Replace all</button>
+      </div>
+      <p class="note">Searches output events. With color codes ignored, window titles (hidden escape sequences) are left alone; untick to change them too.</p>
+    </details>
+
+    <details open>
+      <summary>Selection</summary>
+      <div class="grid2">
+        <button data-op="delete" title="Delete (Del)">Delete</button>
+        <button data-op="duplicate" title="Duplicate (Ctrl+D)">Duplicate</button>
+        <button data-op="merge" title="Join output events into one">Merge output</button>
+        <button data-op="split" title="One event per output line">Split lines</button>
+        <button id="btn-play-sel" class="wide">▶ Play selection</button>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Timing</summary>
+      <div class="field"><label>Stretch ×</label><input id="in-factor" type="number" step="0.1" min="0" value="1.5"><button data-op="stretch">Apply</button></div>
+      <div class="field"><label>Set length (s)</label><input id="in-length" type="number" step="0.1" min="0" value="2"><button data-op="stretch_to">Apply</button></div>
+      <div class="field"><label>Each delay (s)</label><input id="in-delay" type="number" step="0.01" min="0" value="0.05"><button data-op="set_delay">Apply</button></div>
+      <div class="field"><label>Cap pauses (s)</label><input id="in-cap" type="number" step="0.1" min="0" value="1"><button data-op="cap_idle">Apply</button></div>
+      <div class="field"><label>Pause before (s)</label><input id="in-pause" type="number" step="0.1" value="1"><button data-op="pause">Insert</button></div>
+      <p class="note">With nothing selected, timing tools apply to the whole recording.</p>
+    </details>
+
+    <details open>
+      <summary>Even out typing</summary>
+      <div class="field"><label>Key delay (s)</label><input id="in-type-delay" type="number" step="0.01" min="0" value="0.08"></div>
+      <div class="field"><label>Jitter (s)</label><input id="in-type-jitter" type="number" step="0.01" min="0" value="0.03"><button data-op="typing">Apply</button></div>
+    </details>
+
+    <details open id="inject-panel">
+      <summary>Inject command</summary>
+      <div class="field"><label>Prompt</label><input id="in-prompt" type="text" value="$ " spellcheck="false"></div>
+      <div class="field"><label>Command</label><input id="in-command" type="text" placeholder="ls -la" spellcheck="false"></div>
+      <label class="block">Output</label>
+      <textarea id="in-output" rows="5" spellcheck="false" placeholder="command output…"></textarea>
+      <div class="field"><label>Then print</label><input id="in-after" type="text" value="" placeholder="next prompt, e.g. $ " spellcheck="false"></div>
+      <div class="field"><label>Key delay (s)</label><input id="in-inj-delay" type="number" step="0.01" min="0" value="0.08"></div>
+      <div class="field"><label>Line delay (s)</label><input id="in-inj-line" type="number" step="0.01" min="0" value="0.02"></div>
+      <div class="field"><label><input id="in-inj-input" type="checkbox"> also record input</label><button data-op="inject">Insert after selection</button></div>
+    </details>
+
+    <details id="insert-panel">
+      <summary>Insert</summary>
+      <label class="block">Output text <span class="muted">(JSON escapes: \r\n, \u001b[31m…)</span></label>
+      <textarea id="in-text" rows="3" spellcheck="false" placeholder="Hello\r\n"></textarea>
+      <div class="field"><label>Delay (s)</label><input id="in-text-delay" type="number" step="0.01" min="0" value="0.1"><button data-op="insert_text">Insert after</button></div>
+      <div class="field"><label>Marker</label><input id="in-marker" type="text" placeholder="chapter label"><button data-op="marker">Add</button></div>
+    </details>
+
+    <details id="event-panel">
+      <summary>Event</summary>
+      <div id="event-editor" class="muted">Select a single event to edit it.</div>
+    </details>
+
+    <details id="export-panel">
+      <summary>Export</summary>
+      <div class="field"><label>Format</label><select id="ex-format"></select></div>
+      <div class="field"><label>Range</label>
+        <select id="ex-range"><option value="all">whole recording</option><option value="sel">selection</option></select></div>
+      <div class="field ex-anim"><label>Speed ×</label><input id="ex-speed" type="number" step="0.25" min="0.1" value="1"></div>
+      <div class="field ex-anim"><label>Cap pauses (s)</label><input id="ex-idle" type="number" step="0.5" min="0" placeholder="recording's limit"></div>
+      <div class="field ex-anim ex-img"><label>Max FPS</label><input id="ex-fps" type="number" step="5" min="1" max="50" value="30"></div>
+      <div class="field ex-img ex-still"><label>Font size (px)</label><input id="ex-font" type="number" step="1" min="8" max="40" value="16"></div>
+      <div class="checks ex-img ex-still">
+        <label><input id="ex-window" type="checkbox"> window frame</label>
+        <label><input id="ex-cursor" type="checkbox" checked> show cursor</label>
+      </div>
+      <div class="checks ex-html">
+        <label><input id="ex-autoplay" type="checkbox"> autoplay</label>
+        <label><input id="ex-loop" type="checkbox"> loop</label>
+      </div>
+      <p class="note ex-still-note">Still images use the frame at the preview's playhead.</p>
+      <div class="field"><span style="flex:1"></span><button id="ex-go" class="primary-soft">Export</button></div>
+    </details>
+
+    <details>
+      <summary>Recording</summary>
+      <div class="field"><label>Title</label><input id="h-title" type="text"></div>
+      <div class="field"><label>Cols × rows</label><input id="h-cols" type="number" min="1" class="half"><input id="h-rows" type="number" min="1" class="half"></div>
+      <div class="field"><label>Idle limit (s)</label><input id="h-idle" type="number" step="0.1" min="0"><button data-op="header">Apply</button></div>
+    </details>
+
+    <details id="theme-panel">
+      <summary>Theme</summary>
+      <div class="field"><label>Preset</label><select id="th-preset"></select></div>
+      <div class="field"><label>Text</label><input id="th-fg" type="color" class="swatch"></div>
+      <div class="field"><label>Background</label><input id="th-bg" type="color" class="swatch">
+        <label class="inline"><input id="th-transparent" type="checkbox"> transparent</label></div>
+      <label class="block">Palette <span class="muted">(normal, then bright)</span></label>
+      <div id="th-palette" class="palette"></div>
+      <p class="note">Saved in the recording and used by the player, this preview and GIF/SVG/PNG export.
+        Each pick is one undo step. A transparent background shows the page (or image viewer) behind the terminal;
+        GIFs with it are larger, as every frame is stored whole.</p>
+      <div class="field"><span style="flex:1"></span><button id="th-reset">Reset to default</button></div>
+    </details>
+
+    <details>
+      <summary>Keyboard</summary>
+      <dl class="keys">
+        <dt>Space</dt><dd>play / pause preview</dd>
+        <dt>Click, drag</dt><dd>select rows (drag past the edge scrolls)</dd>
+        <dt>Shift/Ctrl+click</dt><dd>extend the selection</dd>
+        <dt>↑ ↓ PgUp PgDn Home End</dt><dd>move selection (Shift extends)</dd>
+        <dt>Ctrl+A</dt><dd>select all</dd>
+        <dt>Esc</dt><dd>clear selection</dd>
+        <dt>Del</dt><dd>delete selection</dd>
+        <dt>Ctrl+D</dt><dd>duplicate selection</dd>
+        <dt>Ctrl+I</dt><dd>insert window (command, output, marker, pause)</dd>
+        <dt>Ctrl+X / C / V</dt><dd>cut / copy / paste events</dd>
+        <dt>Right-click</dt><dd>menu for rows, timeline, preview</dd>
+        <dt>Menu / Shift+F10</dt><dd>menu for the selection</dd>
+        <dt>Ctrl+Z / Ctrl+Shift+Z</dt><dd>undo / redo</dd>
+        <dt>Ctrl+F</dt><dd>find &amp; replace (Enter: next match)</dd>
+        <dt>Ctrl+S</dt><dd>save</dd>
+      </dl>
+    </details>
+  </aside>
+</main>
+
+<script src="static/gotake-player.js"></script>
+<script src="static/editor.js"></script>
+</body>
+</html>

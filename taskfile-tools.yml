@@ -1,0 +1,41 @@
+#https://taskfile.dev/
+version: '3'
+
+vars:
+  BETTERALIGN: github.com/dkorunic/betteralign/cmd/betteralign@v0.15.3
+  STATICCHECK: honnef.co/go/tools/cmd/staticcheck@v0.8.2
+  GO_LICENSES: github.com/google/go-licenses/v2@v2.0.1
+  GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@v1.9.0
+  GOFUMPT: mvdan.cc/gofumpt@v0.12.0
+  REVIVE: github.com/mgechev/revive@v1.17.1
+  GOTESTSUM: gotest.tools/gotestsum@v1.13.0
+
+tasks:
+  ensure-check-go-tool:
+    desc: 'ensure check-go-tool is installed'
+    silent: true
+    internal: true
+    status:
+      - command -v check-go-tool
+    cmds:
+      - go install github.com/oktalz/check-go-tool@latest
+
+  check-go-tool:
+    desc: 'ensure go tool is installed/available'
+    silent: true
+    internal: true
+    deps:
+      - task: ensure-check-go-tool
+    cmds:
+      - check-go-tool '{{ index . .TOOL }}' >/dev/null
+
+  check-go-tools:
+    desc: 'ensure all go tools are installed'
+    silent: true
+    internal: true
+    cmds:
+      - for:
+          var: TOOLS
+        task: check-go-tool
+        vars:
+          TOOL: '{{.ITEM}}'

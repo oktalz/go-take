@@ -1,0 +1,54 @@
+#https://taskfile.dev/
+version: '3'
+
+tasks:
+
+  tidy:
+    desc: 'run Go mod tidy'
+    cmds:
+      - go mod tidy
+
+  format:
+    desc: 'formats the code'
+    deps:
+      - task: check-go-tools
+        vars:
+          TOOLS: [GOFUMPT, BETTERALIGN]
+    cmds:
+      - go fix ./...
+      - $(check-go-tool {{.BETTERALIGN}}) -apply ./... || true
+      - $(check-go-tool {{.GOFUMPT}}) -extra -l -w .
+
+  lint:
+    desc: 'run Go linters'
+    deps:
+      - task: check-go-tools
+        vars:
+          TOOLS: [STATICCHECK, BETTERALIGN, REVIVE]
+    cmds:
+      - go vet ./...
+      - $(check-go-tool {{.REVIVE}}) -config revive.toml -formatter friendly -set_exit_status ./...
+      - $(check-go-tool {{.STATICCHECK}}) ./...
+      - $(check-go-tool {{.BETTERALIGN}}) ./...
+
+  licenses:
+    desc: 'check licenses'
+    deps:
+      - task: check-go-tool
+        vars:
+          TOOL: GO_LICENSES
+    cmds:
+      - |
+          PROJECT="$(go list -m)"
+          ALLOWED_LICENSES="$(<.allowed_license_types)"
+          $(check-go-tool {{.GO_LICENSES}}) report --ignore "$PROJECT" ./...
+          $(check-go-tool {{.GO_LICENSES}}) check --allowed_licenses="$ALLOWED_LICENSES" --ignore "$PROJECT" ./...
+
+  govulncheck:
+    desc: 'check vulnerabilities in Go code'
+    deps:
+      - task: check-go-tool
+        vars:
+          TOOL: GOVULNCHECK
+    cmds:
+      - $(check-go-tool {{.GOVULNCHECK}}) -show verbose ./...

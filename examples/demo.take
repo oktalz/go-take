@@ -1,0 +1,20 @@
+gotake 1
+term 80x20
+title "gotake demo"
+
+marker 0.0 "intro"
+out    0.5 "\e[1;32m~/demo\e[0m $ "
+type   0.24 "echo \"hello from gotake\"" 0.054895 0.091521 0.089956 0.079016 0.077234 0.069845 0.091187 0.093605 0.089861 0.052609 0.083928 0.076389 0.108945 0.067617 0.057208 0.08698 0.083264 0.057339 0.086947 0.090801 0.052548
+out    0.4 "\r\n"
+out    0.15 "hello from gotake\r\n"
+out    0.5 "\e[1;32m~/demo\e[0m $ "
+type   0.24 "ls --color" 0.097045 0.071461 0.071899 0.075884 0.097564 0.101148 0.059562 0.086367 0.090931
+out    0.4 "\r\n"
+out    0.15 "\e[1;34mcast\e[0m  \e[1;34mcmd\e[0m  \e[1;34mweb\e[0m  go.mod  \e[32mgotake\e[0m\r\n"
+marker 0.0 "tests"
+out    0.5 "\e[1;32m~/demo\e[0m $ "
+type   0.24 "go test ./..." 0.060102 0.098423 0.067425 0.108991 0.0882 0.104866 0.083983 0.079335 0.083949 0.073445 0.081103 0.06704
+out    0.4 "\r\n"
+out    0.15 "ok  \tgithub.com/oktalz/go-take/cast\t0.004s\r\n"
+out    0.02 "\e[32mPASS\e[0m\r\n"
+out    0.15 "\e[1;32m~/demo\e[0m $ "

@@ -1,0 +1,138 @@
+<!doctype html>
+<!--
+  Example page for the gotake web player.
+
+  Serve it together with the player script:
+
+    gotake serve examples        (or: task serve)
+
+  and open http://127.0.0.1:8080/casts/player.html
+  Opening this file directly from disk does not work: browsers do not let a
+  file:// page fetch demo.take.
+
+  On your own site, copy the script next to the page (gotake player-js > gotake-player.js)
+  and change the script src below to "gotake-player.js".
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>gotake player examples</title>
+<style>
+  :root {
+    --bg: #f6f7f8; --fg: #1d2125; --muted: #5d6670; --line: #dde1e5; --card: #fff; --code: #eef0f2; --accent: #b7791f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d0e0f; --fg: #e6e6e6; --muted: #8b949e; --line: #24272b; --card: #15171a; --code: #1c1f23; --accent: #e5a50a; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  h2 { font-size: 18px; margin: 48px 0 6px; }
+  p { margin: 0 0 14px; color: var(--muted); }
+  code { background: var(--code); padding: 1px 6px; border-radius: 4px; font-size: 14px; }
+  pre { background: var(--code); padding: 12px 14px; border-radius: 6px; overflow-x: auto; font-size: 13px; line-height: 1.45; margin: 14px 0 0; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 700px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  .label { font: 600 13px ui-monospace, monospace; color: var(--muted); margin: 0 0 6px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+  button {
+    font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--fg);
+  }
+  button:hover { border-color: var(--accent); }
+  #log {
+    margin: 12px 0 0; padding: 10px 12px; height: 120px; overflow-y: auto; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--card); font: 13px/1.5 ui-monospace, monospace; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>gotake player examples</h1>
+  <p>Each player below plays <code>demo.take</code>, which has two markers: <code>intro</code> and <code>tests</code>.</p>
+
+  <h2>1. Embed with data attributes</h2>
+  <p>One script tag and one element. The player starts when the page loads and plays in a loop.</p>
+  <div data-gotake-src="demo.take" data-autoplay data-loop data-idle-time-limit="2"></div>
+  <pre>&lt;script src="gotake-player.js"&gt;&lt;/script&gt;
+&lt;div data-gotake-src="demo.take" data-autoplay data-loop data-idle-time-limit="2"&gt;&lt;/div&gt;</pre>
+
+  <h2>2. Chapters with start and stop markers</h2>
+  <p>
+    The same recording embedded twice, one chapter each. <code>data-start-at</code> and <code>data-stop-at</code>
+    take a marker label or seconds. Playback pauses at the stop marker. Press play to continue past it.
+  </p>
+  <div class="grid">
+    <div>
+      <div class="label">intro → tests</div>
+      <div data-gotake-src="demo.take" data-start-at="intro" data-stop-at="tests" data-font-size="12"></div>
+    </div>
+    <div>
+      <div class="label">tests → end</div>
+      <div data-gotake-src="demo.take" data-start-at="tests" data-poster="tests" data-font-size="12"></div>
+    </div>
+  </div>
+  <pre>&lt;div data-gotake-src="demo.take" data-start-at="intro" data-stop-at="tests"&gt;&lt;/div&gt;
+&lt;div data-gotake-src="demo.take" data-start-at="tests" data-poster="tests"&gt;&lt;/div&gt;</pre>
+
+  <h2>3. Control it from JavaScript</h2>
+  <p>
+    <code>GoTakePlayer.create</code> returns a player you can drive with your own buttons. Its events
+    are logged below.
+  </p>
+  <div id="api-player"></div>
+  <div class="toolbar">
+    <button type="button" data-act="toggle">Play / pause</button>
+    <button type="button" data-act="intro">Go to intro</button>
+    <button type="button" data-act="tests">Go to tests</button>
+    <button type="button" data-act="speed">Speed: 1x</button>
+  </div>
+  <div id="log" aria-live="polite"></div>
+  <pre>const p = await GoTakePlayer.create('#api-player', 'demo.take', { idleTimeLimit: 1 });
+p.on('marker', m =&gt; log('marker ' + m.label));
+p.seek(p.resolveTime('tests'));
+p.setSpeed(2);
+p.play();</pre>
+</main>
+
+<script src="../gotake-player.js"></script>
+<script>
+  (async function () {
+    var logEl = document.getElementById('log');
+    function log(msg) {
+      var line = document.createElement('div');
+      line.textContent = GoTakePlayer.formatTime(p ? p.currentTime : 0) + '  ' + msg;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    var p = null;
+    p = await GoTakePlayer.create('#api-player', 'demo.take', { idleTimeLimit: 1, controls: true });
+    log('ready, ' + GoTakePlayer.formatTime(p.duration) + ' long');
+    ['play', 'pause', 'stop', 'ended'].forEach(function (name) {
+      p.on(name, function () { log(name); });
+    });
+    p.on('marker', function (m) { log('marker ' + (m.label || '(no label)')); });
+
+    var speeds = [1, 2, 0.5];
+    document.querySelectorAll('[data-act]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        switch (b.dataset.act) {
+          case 'toggle': p.toggle(); break;
+          case 'intro': case 'tests':
+            p.seek(p.resolveTime(b.dataset.act));
+            log('seek to ' + b.dataset.act);
+            break;
+          case 'speed':
+            speeds.push(speeds.shift());
+            p.setSpeed(speeds[0]);
+            b.textContent = 'Speed: ' + speeds[0] + 'x';
+            break;
+        }
+      });
+    });
+  })();
+</script>
+</body>
+</html>

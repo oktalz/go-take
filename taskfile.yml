@@ -1,0 +1,97 @@
+#https://taskfile.dev/
+version: '3'
+
+includes:
+  tools:
+    taskfile: taskfile-tools.yml
+    flatten: true
+  ci:
+    taskfile: taskfile-ci.yml
+    flatten: true
+
+vars:
+  BIN: gotake
+  DEMO: examples/demo.take
+
+tasks:
+
+  ci:
+    desc: 'do all the checks'
+    cmds:
+      - task: tidy
+      - task: format
+      - task: licenses
+      - task: lint
+      - task: test
+      - task: govulncheck
+
+  test:
+    desc: 'run Go tests'
+    deps:
+      - task: check-go-tool
+        vars:
+          TOOL: GOTESTSUM
+    cmds:
+      - CGO_ENABLED=1 $(check-go-tool {{.GOTESTSUM}}) --hide-summary=output --format-icons=hivis --format=testdox --format-hide-empty-pkg -- -race ./...
+
+  build:
+    desc: 'build the gotake binary'
+    sources:
+      - '**/*.go'
+      - 'web/static/**'
+      - go.mod
+      - go.sum
+    generates:
+      - '{{.BIN}}'
+    cmds:
+      - go build -buildvcs=true -o {{.BIN}} ./cmd/gotake
+
+  install:
+    desc: 'install gotake into GOBIN'
+    cmds:
+      - go install -buildvcs=true ./cmd/gotake
+
+  rec:
+    desc: 'record a session (task rec -- out.take)'
+    cmds:
+      - go run ./cmd/gotake rec {{.CLI_ARGS}}
+
+  play:
+    desc: 'play a recording in the terminal (default: demo)'
+    interactive: true
+    cmds:
+      - go run ./cmd/gotake play {{.CLI_ARGS | default .DEMO}}
+
+  edit:
+    desc: 'open the web editor (default: demo)'
+    cmds:
+      - go run ./cmd/gotake edit {{.CLI_ARGS | default .DEMO}}
+
+  serve:
+    desc: 'serve recordings and the embeddable player'
+    cmds:
+      - go run ./cmd/gotake serve -open examples
+
+  player-js:
+    desc: 'export the embeddable player to dist/gotake-player.js'
+    cmds:
+      - mkdir -p dist
+      - go run ./cmd/gotake player-js > dist/gotake-player.js
+
+  clean:
+    desc: 'remove build artifacts'
+    cmds:
+      - rm -rf {{.BIN}} dist
+
+  update-x:
+    desc: 'update golang.org/x/ dependencies'
+    cmds:
+      - go get -u golang.org/x/...
+      - task: tidy
+
+  tools-install:
+    desc: 'install all go tools'
+    cmds:
+      - task: check-go-tools
+        vars:
+          TOOLS: [BETTERALIGN, STATICCHECK, GO_LICENSES, GOVULNCHECK, GOFUMPT, REVIVE, GOTESTSUM]

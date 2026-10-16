@@ -1,0 +1,5 @@
+/gotake
+*.tmp
+.task/
+.local/
+.vscode/
