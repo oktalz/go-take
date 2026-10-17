@@ -21,6 +21,15 @@
 
   var XTERM_BASE = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0';
 
+  var LOGO = [
+    '              _        _',
+    '   __ _  ___ | |_ __ _| | _____',
+    '  / _` |/ _ \\| __/ _` | |/ / _ \\',
+    ' | (_| | (_) | || (_| |   <  __/',
+    '  \\__, |\\___/ \\__\\__,_|_|\\_\\___|',
+    '  |___/'
+  ].join('\r\n') + '\r\n';
+
   var CSS = [
     '.gotake{--gotake-bg:#121314;--gotake-fg:#d6d6d6;--gotake-accent:#e5a50a;--gotake-bar:rgba(18,19,20,.92);',
     'position:relative;display:block;max-width:100%;border-radius:8px;overflow:hidden;background:var(--gotake-bg);',
@@ -525,6 +534,13 @@
     this.index = 0; // force a full re-render from the new events
     this.time = 0;
     this.seek(start);
+    if (!keepTime && !o.autoplay) {
+      if (this.overlay) this.overlay.hidden = false;
+      if (o.poster == null) {
+        this.term.write('\x1bc\x1b[?25l' + LOGO);
+        this._logo = true;
+      }
+    }
     this._emit('ready', this);
     if (!keepTime && o.autoplay) this.play();
   };
@@ -592,8 +608,9 @@
 
   Player.prototype.seek = function (t) {
     t = Math.min(Math.max(0, t), this.duration);
-    if (t < this.time || this.index === 0 || t === 0) {
+    if (t < this.time || this.index === 0 || t === 0 || this._logo) {
       // rewind: full reset in-band so it is ordered with pending writes
+      this._logo = false;
       this.term.resize(this.cols, this.rows);
       this.term.write('\x1bc\x1b[?25l');
       this.index = 0;
@@ -612,7 +629,7 @@
 
   Player.prototype.play = function () {
     if (this.playing) return;
-    if (this.time >= this.duration) this.seek(this.startTime());
+    if (this._logo || this.time >= this.duration) this.seek(this.startTime());
     this.playing = true;
     this.overlay.hidden = true;
     this._wallStart = performance.now();

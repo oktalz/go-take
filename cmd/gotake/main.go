@@ -19,6 +19,7 @@ import (
 	"github.com/oktalz/go-take/cast"
 	"github.com/oktalz/go-take/play"
 	"github.com/oktalz/go-take/record"
+	"github.com/oktalz/go-take/version"
 	"github.com/oktalz/go-take/web"
 )
 
@@ -35,6 +36,8 @@ Usage:
   gotake info    [FILE]                 show recording details
   gotake cat     [FILE]                 print the raw output, without timing
   gotake convert IN OUT                 convert between .take and asciicast (.cast, v2 or v3)
+  gotake version                        print version information
+  gotake tag                            print version tag
 
 Edit commands (modify FILE in place, or write to -o OUT):
   gotake cut     -from T -to T [FILE]   remove a section
@@ -58,11 +61,15 @@ Run "gotake COMMAND -h" for command flags.
 `
 
 func main() {
+	_ = version.Set()
 	if len(os.Args) < 2 {
-		eprintf("%s", usage)
+		eprintf("%s%s", version.Logo, usage)
 		os.Exit(2)
 	}
 	cmd, args := os.Args[1], os.Args[2:]
+	if cmd != "play" {
+		eprintf("%s", version.Logo)
+	}
 	var err error
 	switch cmd {
 	case "rec", "record":
@@ -85,6 +92,11 @@ func main() {
 		err = cmdConvert(args)
 	case "cut", "stretch", "speed", "idle", "typing", "inject", "pause", "marker", "replace", "trim-exit":
 		err = cmdEditOp(cmd, args)
+	case "version", "-v", "--version":
+		fmt.Println("gotake", version.Version)
+		fmt.Println("built from:", version.Repo)
+	case "tag":
+		fmt.Println(version.Tag)
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 	default:

@@ -38,6 +38,7 @@ tasks:
     desc: 'build the gotake binary'
     sources:
       - '**/*.go'
+      - 'version/logo.txt'
       - 'web/static/**'
       - go.mod
       - go.sum

@@ -242,6 +242,7 @@ task docs           # export the README demo (docs/demo.svg) from examples/demo.
 | `export/` | GIF, PNG, SVG, HTML and text export, using the vt10x terminal emulator |
 | `web/` | editor server and API, gallery server, embedded static assets |
 | `web/static/gotake-player.js` | the embeddable player, with no build step |
+| `version/` | build version info and startup logo |
 | `cmd/gotake/` | CLI |
 | `examples/demo.take` | demo made only from `gotake inject` commands |
 | `docs/demo.svg` | the README demo, made with `task docs` |
