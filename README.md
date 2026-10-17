@@ -131,7 +131,7 @@ minutes:seconds (`1:02.5`) or a marker label, for example `gotake cut -from intr
 
 ```sh
 gotake export -o demo.gif demo.take                  # animated GIF
-gotake export -f svg -window demo.take               # animated SVG with a window title bar -> demo.svg
+gotake export -f svg -window demo.take               # animated SVG with a title bar -> demo.svg
 gotake export -o demo.html -autoplay demo.take       # one self-contained HTML page with the player
 gotake export -o poster.png -at 0:12 demo.take       # one frame as PNG (svg-frame for SVG)
 gotake export -f txt demo.take                       # plain-text transcript
@@ -142,6 +142,11 @@ gotake export -o part.gif -from intro -to tests demo.take   # between two marker
 
 Common flags: `-speed`, `-idle` (cap pauses), `-fps`, `-font-size`, `-font`, `-padding`, `-window`, `-no-cursor`.
 The format comes from `-f` or the `-o` extension.
+
+`-window` adds a title bar in the style of the system you export on: a GNOME header bar on Linux, the minimize,
+maximize and close buttons on Windows (WSL included), or the colored buttons on macOS. Pick one with
+`-window=linux`, `-window=windows` or `-window=mac`. The bar shows the recording's title (or its command) and takes
+its colors from the theme.
 
 GIF and PNG are rendered in Go with the built-in Go Mono font and need nothing installed. Animated SVG is usually
 smaller and stays sharp at any size, but uses the viewer's monospace font. A section exported with `-from` starts on

@@ -215,3 +215,38 @@ func TestFontOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestWindowStyles(t *testing.T) {
+	for in, want := range map[string]string{"linux": WindowLinux, "Windows": WindowWindows, "macos": WindowMac, "": DefaultWindowStyle()} {
+		if got, err := windowStyle(in); err != nil || got != want {
+			t.Errorf("windowStyle(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	if _, err := windowStyle("beos"); err == nil {
+		t.Error("expected an error for an unknown style")
+	}
+	if got := windowTitle("", "/bin/bash -l"); got != "bash" {
+		t.Errorf("title from command = %q", got)
+	}
+
+	c := demo()
+	c.Header.Title = "my demo"
+	marks := map[string]string{WindowLinux: `font-weight="bold"`, WindowWindows: `<line`, WindowMac: `#ff5f57`}
+	for _, st := range WindowStyles {
+		var buf bytes.Buffer
+		if err := SVG(&buf, c, Options{Window: true, WindowStyle: st}); err != nil {
+			t.Fatal(err)
+		}
+		svg := buf.String()
+		if !strings.Contains(svg, ">my demo</text>") || !strings.Contains(svg, marks[st]) {
+			t.Errorf("%s: SVG title bar is missing the title or %s", st, marks[st])
+		}
+		buf.Reset()
+		if err := PNG(&buf, c, Options{Window: true, WindowStyle: st}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := png.Decode(&buf); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

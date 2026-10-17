@@ -1287,6 +1287,7 @@
     if (f.kind === 'anim' || f.kind === 'still') {
       q.set('font_size', $('ex-font').value || 16);
       q.set('window', $('ex-window').checked ? 1 : 0);
+      q.set('window_style', $('ex-window-style').value);
       q.set('cursor', $('ex-cursor').checked ? 1 : 0);
     }
     if (f.kind === 'html') {

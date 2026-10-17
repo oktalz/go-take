@@ -284,7 +284,7 @@ func (ed *Editor) handleFind(w http.ResponseWriter, r *http.Request) {
 
 // handleExport renders the recording (or a range of it) in the requested format.
 // Query: format, from/to (event indices), at (recording time for still frames),
-// speed, idle, fps, font_size, window, cursor, title, autoplay, loop.
+// speed, idle, fps, font_size, window, window_style, cursor, title, autoplay, loop.
 func (ed *Editor) handleExport(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f, err := export.Lookup(q.Get("format"))
@@ -300,7 +300,7 @@ func (ed *Editor) handleExport(w http.ResponseWriter, r *http.Request) {
 	o := export.Options{
 		Speed: floatParam(q, "speed", 1), IdleTimeLimit: floatParam(q, "idle", 0), FPS: floatParam(q, "fps", 30),
 		FontSize: floatParam(q, "font_size", 16), At: floatParam(q, "at", -1),
-		Window: q.Get("window") == "1", HideCursor: q.Get("cursor") == "0",
+		Window: q.Get("window") == "1", WindowStyle: q.Get("window_style"), HideCursor: q.Get("cursor") == "0",
 	}
 	suffix := ""
 	if q.Has("from") || q.Has("to") {

@@ -79,13 +79,7 @@ func writeSVG(w io.Writer, l svgLayout, frames []Frame) error {
 		p(`<rect width="100%%" height="100%%" rx="8" fill="%s"/>`+"\n", bg)
 	}
 	if l.o.Window {
-		p(`<path d="M0 8a8 8 0 0 1 8-8h%gv%gH0z" fill="%s"/>`, width-16, l.barH, cssColor(windowBar))
-		p(`<rect x="%g" width="8" height="%g" fill="%s"/>`, width-8, l.barH, cssColor(windowBar))
-		rad := l.barH * 0.2
-		for i, d := range windowDots {
-			p(`<circle cx="%g" cy="%g" r="%g" fill="%s"/>`, l.pad+rad+float64(i)*rad*3.2, l.barH/2, rad, cssColor(d))
-		}
-		p("\n")
+		writeSVGWindow(bw, windowChrome(l.o, width), width)
 	}
 	p(`<svg x="%g" y="%g" width="%g" height="%g"><g id="f">`+"\n", l.pad, l.pad+l.barH, l.termW(), l.termH())
 	for i, f := range frames {

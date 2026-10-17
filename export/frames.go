@@ -30,8 +30,13 @@ type Options struct {
 	EndDelay      float64 // how long the last frame stays before looping (default 2s)
 	At            float64 // time of the frame for still images (<0 = end)
 	Padding       int     // space around the terminal in pixels (default 12)
-	Window        bool    // draw a window title bar with three dots
-	HideCursor    bool    // do not draw the cursor
+	Window        bool    // draw a window title bar
+	// WindowStyle is the title bar's look: WindowLinux, WindowWindows or WindowMac
+	// (default: the system gotake runs on).
+	WindowStyle string
+	// WindowTitle is the text in the title bar (default: the recording's title or command).
+	WindowTitle string
+	HideCursor  bool // do not draw the cursor
 	// Fonts are font files (TTF, OTF, TTC) for GIF and PNG, tried in order before
 	// the built-in Go Mono (default: the GOTAKE_FONT environment variable).
 	Fonts []string
@@ -59,6 +64,14 @@ func (o Options) withDefaults(c *cast.Cast) Options {
 	}
 	if o.Padding <= 0 {
 		o.Padding = 12
+	}
+	if s, err := windowStyle(o.WindowStyle); err == nil {
+		o.WindowStyle = s
+	} else {
+		o.WindowStyle = DefaultWindowStyle()
+	}
+	if o.WindowTitle == "" {
+		o.WindowTitle = windowTitle(c.Header.Title, c.Header.Command)
 	}
 	if len(o.Fonts) == 0 {
 		o.Fonts = filepath.SplitList(os.Getenv(FontEnv))

@@ -20,16 +20,12 @@ import (
 // foreground when anti-aliasing text into the GIF palette.
 const blendLevels = 4
 
-var (
-	windowBar  = color.RGBA{0x2a, 0x2d, 0x31, 0xff}
-	windowDots = [3]color.RGBA{{0xff, 0x5f, 0x57, 0xff}, {0xfe, 0xbc, 0x2e, 0xff}, {0x28, 0xc8, 0x40, 0xff}}
-)
-
 // rasterizer draws screens into paletted images.
 type rasterizer struct {
 	glyphs   map[glyphKey]*image.Alpha
 	pal      *paletteBuilder
 	families []*fontFamily // Options.Fonts, then Go Mono
+	chrome   chrome        // window title bar, when Options.Window is set
 	faces    faceCache
 	o        Options
 	light    float64 // width of a light box drawing line
@@ -75,7 +71,8 @@ func newRasterizer(cols, rows int, o Options) (*rasterizer, error) {
 	r.baseline = m.Ascent.Ceil() + (r.ch-m.Ascent.Ceil()-m.Descent.Ceil())/2 // center the line in the cell
 	r.light = math.Max(1, math.Round(o.FontSize/12))
 	if o.Window {
-		r.barH = int(math.Round(o.FontSize * 1.9))
+		r.chrome = windowChrome(o, float64(cols*r.cw+2*r.pad))
+		r.barH = int(r.chrome.height)
 	}
 	return r, nil
 }
@@ -220,8 +217,8 @@ func (r *rasterizer) prepare(screens []*Screen) {
 	r.pal = p
 	r.bgIndex = p.add(r.o.Theme.BG)
 	if r.o.Window {
-		for _, d := range windowDots {
-			p.ramp(d, windowBar)
+		for _, c := range r.chrome.colors() {
+			p.ramp(c, r.chrome.bar)
 		}
 	}
 	for _, s := range screens {
@@ -298,45 +295,6 @@ func (r *rasterizer) drawCell(img *image.Paletted, x, y int, c Cell, fg, bg colo
 			row[px] = ramp[level]
 		}
 	}
-}
-
-func (r *rasterizer) drawWindow(img *image.Paletted) {
-	bar := r.pal.ramp(windowBar, windowBar)[0]
-	w := img.Rect.Dx()
-	for y := range r.barH {
-		for x := range w {
-			img.Pix[y*img.Stride+x] = bar
-		}
-	}
-	rad := float64(r.barH) * 0.2
-	cy := float64(r.barH) / 2
-	for i, dot := range windowDots {
-		ramp := r.pal.ramp(dot, windowBar)
-		cx := float64(r.pad) + rad + float64(i)*rad*3.2
-		for y := int(cy - rad - 1); y <= int(cy+rad+1); y++ {
-			for x := int(cx - rad - 1); x <= int(cx+rad+1); x++ {
-				cov := circleCoverage(float64(x), float64(y), cx, cy, rad)
-				if cov > 0 {
-					img.Pix[y*img.Stride+x] = ramp[int(cov*blendLevels+0.5)]
-				}
-			}
-		}
-	}
-}
-
-// circleCoverage estimates how much of pixel (x, y) lies inside the circle (4x4 supersampling).
-func circleCoverage(x, y, cx, cy, rad float64) float64 {
-	in := 0
-	for sy := range 4 {
-		for sx := range 4 {
-			dx := x + (float64(sx)+0.5)/4 - cx
-			dy := y + (float64(sy)+0.5)/4 - cy
-			if dx*dx+dy*dy <= rad*rad {
-				in++
-			}
-		}
-	}
-	return float64(in) / 16
 }
 
 // GIF writes an animated GIF of the recording.

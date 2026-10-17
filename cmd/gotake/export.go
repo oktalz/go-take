@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -34,7 +35,8 @@ func (e *exportArgs) register(fs *flag.FlagSet) {
 	fs.Float64Var(&e.opts.FPS, "fps", 30, "maximum frames per second (gif, svg)")
 	fs.Float64Var(&e.opts.FontSize, "font-size", 16, "font size in pixels")
 	fs.IntVar(&e.opts.Padding, "padding", 12, "padding around the terminal in pixels")
-	fs.BoolVar(&e.opts.Window, "window", false, "draw a window title bar")
+	fs.Var((*windowFlag)(&e.opts), "window",
+		"draw a window title bar: -window for this system's style, or -window=linux, windows or mac")
 	fs.BoolVar(&e.opts.HideCursor, "no-cursor", false, "do not draw the cursor")
 	fs.Var((*listFlag)(&e.opts.Fonts), "font",
 		"font file (TTF, OTF, TTC) for gif and png, tried before Go Mono; repeat for more (default $"+export.FontEnv+")")
@@ -113,6 +115,36 @@ func cmdExport(args []string) error {
 		eprintf("%s: %s, %s\n", dst, f.Label, humanSize(st.Size()))
 	}
 	return nil
+}
+
+// windowFlag is -window (the style of this system) or -window=STYLE.
+type windowFlag export.Options
+
+func (w *windowFlag) IsBoolFlag() bool { return true }
+
+func (w *windowFlag) String() string {
+	if w == nil || !w.Window {
+		return "false"
+	}
+	return w.WindowStyle
+}
+
+func (w *windowFlag) Set(s string) error {
+	switch strings.ToLower(s) {
+	case "false", "0", "no", "off":
+		w.Window = false
+		return nil
+	case "true", "1", "yes", "on", "auto":
+		w.Window, w.WindowStyle = true, ""
+		return nil
+	}
+	for _, st := range export.WindowStyles {
+		if strings.EqualFold(s, st) || (st == export.WindowMac && strings.EqualFold(s, "macos")) {
+			w.Window, w.WindowStyle = true, st
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown window style %q (use %s)", s, strings.Join(export.WindowStyles, ", "))
 }
 
 // listFlag collects the values of a flag given several times.
