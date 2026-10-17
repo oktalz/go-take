@@ -78,6 +78,8 @@ saved as `.take`.
 gotake edit demo.take
 ```
 
+![gotake editor: live preview on top, a timeline with markers and keystrokes, and the list of events with their delays](examples/editor.png)
+
 - Select events by clicking or dragging rows in the event list (dragging past the edge scrolls), or by dragging
   on the timeline. Shift/Ctrl+click and Shift+arrows/PgUp/PgDn/Home/End extend the selection.
 - **Selection**: delete, duplicate, merge, split lines, play selection.
@@ -243,6 +245,7 @@ task docs           # export the README demo (docs/demo.svg) from examples/demo.
 | `cmd/gotake/` | CLI |
 | `examples/demo.take` | demo made only from `gotake inject` commands |
 | `docs/demo.svg` | the README demo, made with `task docs` |
+| `examples/editor.png` | screenshot of the web editor, shown in this README |
 | `examples/player.html` | web player examples: data attributes, chapters by marker, JavaScript API |
 
 ## License
