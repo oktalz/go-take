@@ -19,6 +19,7 @@ builds:
       - linux
       - darwin
       - freebsd
+      - windows
     goarch:
       - "386"
       - amd64
@@ -31,6 +32,15 @@ builds:
       - "5"
       - "6"
       - "7"
+    ignore:
+      - goos: windows
+        goarch: arm
+      - goos: windows
+        goarch: ppc64le
+      - goos: windows
+        goarch: riscv64
+      - goos: windows
+        goarch: s390x
 archives:
   - name_template: |-
       {{- $prettyOS := .Os -}}
@@ -40,6 +50,8 @@ archives:
       	{{- $prettyOS = "Linux" -}}
       {{- else if eq $prettyOS "freebsd" -}}
       	{{- $prettyOS = "FreeBSD" -}}
+      {{- else if eq $prettyOS "windows" -}}
+      	{{- $prettyOS = "Windows" -}}
       {{- end -}}
 
       {{- $prettyArch := .Arch -}}
@@ -49,6 +61,9 @@ archives:
       	{{- $prettyArch = "x86_64" -}}
       {{- end -}}
       {{.Binary}}_{{.Version}}_{{$prettyOS}}_{{$prettyArch}}{{ with .Arm }}v{{ . }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
 checksum:
   name_template: 'checksums.txt'
 changelog:

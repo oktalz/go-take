@@ -4,23 +4,24 @@ package record
 import (
 	"cmp"
 	"errors"
-	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unicode/utf8"
 
-	"github.com/creack/pty"
 	"golang.org/x/term"
 
 	"github.com/oktalz/go-take/cast"
 )
+
+type session interface {
+	io.ReadWriteCloser
+	resize(cols, rows int) error
+	wait() int
+}
 
 // Options configures a recording.
 type Options struct {
@@ -36,7 +37,11 @@ type Options struct {
 // Record runs the command in a pseudo terminal and streams events to out.
 // Events are written as they happen, so an interrupted recording is still usable.
 func Record(out io.Writer, opts Options) error {
-	command := cmp.Or(opts.Command, os.Getenv("SHELL"), "/bin/sh")
+	restoreVT := EnableVT()
+	defer restoreVT()
+
+	shell := defaultShell()
+	command := cmp.Or(opts.Command, shell)
 	stdinFd := int(os.Stdin.Fd())
 	isTTY := term.IsTerminal(stdinFd)
 	cols, rows := termSize(opts.Cols, opts.Rows)
@@ -59,16 +64,12 @@ func Record(out io.Writer, opts Options) error {
 		return err
 	}
 
-	cmd := exec.Command("/bin/sh", "-c", command)
-	if opts.Command == "" {
-		cmd = exec.Command(command)
-	}
-	cmd.Env = append(os.Environ(), "GOTAKE_RECORDING=1", "TERM="+termType)
-	cmd.Env = append(cmd.Env, opts.Env...)
+	env := append(os.Environ(), "GOTAKE_RECORDING=1", "TERM="+termType)
+	env = append(env, opts.Env...)
 
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+	ptmx, err := startPTY(opts.Command, shell, env, cols, rows)
 	if err != nil {
-		return fmt.Errorf("start %q: %w", command, err)
+		return err
 	}
 	defer ptmx.Close()
 
@@ -79,7 +80,7 @@ func Record(out io.Writer, opts Options) error {
 			return err
 		}
 		defer func() { _ = term.Restore(stdinFd, old) }()
-		stop := forwardResize(ptmx, w)
+		stop := forwardResize(ptmx, cols, rows, w)
 		defer stop()
 	}
 	var onInput func(string)
@@ -91,12 +92,7 @@ func Record(out io.Writer, opts Options) error {
 		return errors.Join(err, w.close())
 	}
 
-	status := 0
-	if err := cmd.Wait(); err != nil {
-		if ee, ok := errors.AsType[*exec.ExitError](err); ok {
-			status = ee.ExitCode()
-		}
-	}
+	status := ptmx.wait()
 	w.emit(cast.Exit, strconv.Itoa(status))
 	return w.close()
 }
@@ -111,25 +107,8 @@ func termSize(cols, rows int) (c, r int) {
 	return orDefault(cols, 80), orDefault(rows, 24)
 }
 
-// forwardResize propagates terminal resizes to the pty and records them.
-func forwardResize(ptmx *os.File, w *eventWriter) (stop func()) {
-	winch := make(chan os.Signal, 1)
-	signal.Notify(winch, syscall.SIGWINCH)
-	go func() {
-		for range winch {
-			c, r, err := term.GetSize(int(os.Stdout.Fd()))
-			if err != nil {
-				continue
-			}
-			_ = pty.Setsize(ptmx, &pty.Winsize{Cols: uint16(c), Rows: uint16(r)})
-			w.emit(cast.Resize, fmt.Sprintf("%dx%d", c, r))
-		}
-	}()
-	return func() { signal.Stop(winch) }
-}
-
 // copyInput forwards stdin to the pty, passing keystrokes to onInput when set.
-func copyInput(ptmx *os.File, onInput func(string)) {
+func copyInput(ptmx io.Writer, onInput func(string)) {
 	buf := make([]byte, 4096)
 	var dec utf8Buffer
 	for {
@@ -149,7 +128,7 @@ func copyInput(ptmx *os.File, onInput func(string)) {
 }
 
 // copyOutput forwards pty output to stdout and records it until the child exits.
-func copyOutput(ptmx *os.File, w *eventWriter) error {
+func copyOutput(ptmx io.Reader, w *eventWriter) error {
 	buf := make([]byte, 32*1024)
 	var dec utf8Buffer
 	for {
@@ -172,12 +151,6 @@ func copyOutput(ptmx *os.File, w *eventWriter) error {
 			return err
 		}
 	}
-}
-
-// childExited reports whether a pty read error just means the child closed it
-// (Linux reports EIO for that).
-func childExited(err error) bool {
-	return errors.Is(err, io.EOF) || errors.Is(err, syscall.EIO) || errors.Is(err, os.ErrClosed)
 }
 
 func orDefault(v, d int) int {

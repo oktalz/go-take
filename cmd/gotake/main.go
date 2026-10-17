@@ -61,6 +61,7 @@ Run "gotake COMMAND -h" for command flags.
 `
 
 func main() {
+	_ = record.EnableVT()
 	_ = version.Set()
 	if len(os.Args) < 2 {
 		eprintf("%s%s", version.Logo, usage)
