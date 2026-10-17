@@ -13,11 +13,21 @@ Record terminal sessions, edit them, and embed them on web pages. Written in Go.
 
 ## Install
 
+Download a prebuilt binary from [Releases](https://github.com/oktalz/go-take/releases), or install with Go:
+
 ```sh
 go install github.com/oktalz/go-take/cmd/gotake@latest
 ```
 
 This installs the `gotake` binary.
+
+Or run via the multi-arch container image on GHCR:
+
+```sh
+docker run --rm -v "$PWD:/work" ghcr.io/oktalz/go-take export -f svg demo.take
+docker run --rm -v "$PWD:/work" -p 8080:8080 ghcr.io/oktalz/go-take edit -addr :8080 demo.take
+docker run --rm -v "$PWD:/work" -p 8080:8080 ghcr.io/oktalz/go-take serve -addr :8080 .
+```
 
 ## Record and play
 

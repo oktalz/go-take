@@ -1,0 +1,98 @@
+version: 2
+# Build output must not dirty the checkout: Go stamps any untracked path as
+# a modified tree. .local is already ignored.
+dist: .local/dist
+before:
+  hooks:
+    - go mod tidy
+builds:
+  - env:
+      - CGO_ENABLED=0
+    binary: gotake
+    id: gotake
+    main: ./cmd/gotake
+    flags:
+      - -trimpath
+    ldflags:
+      - -s
+    goos:
+      - linux
+      - darwin
+      - freebsd
+    goarch:
+      - "386"
+      - amd64
+      - arm
+      - arm64
+      - ppc64le
+      - riscv64
+      - s390x
+    goarm:
+      - "5"
+      - "6"
+      - "7"
+archives:
+  - name_template: |-
+      {{- $prettyOS := .Os -}}
+      {{- if eq $prettyOS "darwin" -}}
+      	{{- $prettyOS = "Darwin" -}}
+      {{- else if eq $prettyOS "linux" -}}
+      	{{- $prettyOS = "Linux" -}}
+      {{- else if eq $prettyOS "freebsd" -}}
+      	{{- $prettyOS = "FreeBSD" -}}
+      {{- end -}}
+
+      {{- $prettyArch := .Arch -}}
+      {{- if eq $prettyArch "386" -}}
+      	{{- $prettyArch = "i386" -}}
+      {{- else if eq $prettyArch "amd64" -}}
+      	{{- $prettyArch = "x86_64" -}}
+      {{- end -}}
+      {{.Binary}}_{{.Version}}_{{$prettyOS}}_{{$prettyArch}}{{ with .Arm }}v{{ . }}{{ end }}
+checksum:
+  name_template: 'checksums.txt'
+changelog:
+  sort: asc
+  use: git
+snapshot:
+  version_template: "{{ .Tag }}-next"
+release:
+  draft: false
+  # Re-releases (workflow_dispatch rebuilds) must supersede old binaries.
+  replace_existing_artifacts: true
+  header: |
+    ## Release Notes
+    gotake {{.Tag}} {{.ShortCommit}}
+
+    Build date: {{.Date}}
+  name_template: "gotake v{{.Version}}"
+# One multi-arch image per release, pushed to GHCR. GoReleaser stages each
+# platform's binary in the build context; the Dockerfile only assembles the
+# image, so all architectures build without emulation.
+dockers_v2:
+  - images:
+      - ghcr.io/oktalz/go-take
+    dockerfile: Dockerfile
+    platforms:
+      - linux/386
+      - linux/amd64
+      - linux/arm/v5
+      - linux/arm/v6
+      - linux/arm/v7
+      - linux/arm64
+      - linux/ppc64le
+      - linux/riscv64
+      - linux/s390x
+    tags:
+      - "{{ .Version }}"
+      - "{{ .Major }}.{{ .Minor }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    labels:
+      "org.opencontainers.image.title": "gotake"
+      "org.opencontainers.image.description": "Record, edit and embed terminal sessions"
+      "org.opencontainers.image.url": "https://github.com/oktalz/go-take"
+      "org.opencontainers.image.source": "https://github.com/oktalz/go-take"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.licenses": "MIT"
+      "org.opencontainers.image.created": "{{ .Date }}"
