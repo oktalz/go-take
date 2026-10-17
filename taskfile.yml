@@ -72,6 +72,12 @@ tasks:
     cmds:
       - go run ./cmd/gotake serve -open examples
 
+  docs:
+    desc: 'export the README demo (docs/demo.svg) from examples/demo.take'
+    cmds:
+      - mkdir -p docs
+      - go run ./cmd/gotake export -f svg -o docs/demo.svg examples/demo.take
+
   player-js:
     desc: 'export the embeddable player to dist/gotake-player.js'
     cmds:

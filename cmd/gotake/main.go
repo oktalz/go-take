@@ -256,7 +256,7 @@ func cmdEdit(args []string) error {
 
 func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	addr := fs.String("addr", "127.0.0.1:8080", "listen address")
+	addr := fs.String("addr", "0.0.0.0:8080", "listen address")
 	open := fs.Bool("open", false, "open a browser")
 	pos, err := parseArgs(fs, args)
 	if err != nil {

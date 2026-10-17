@@ -2,6 +2,8 @@
 
 Record terminal sessions, edit them, and embed them on web pages. Written in Go.
 
+![gotake demo: a recording with typed commands and their output, made with gotake inject](docs/demo.svg)
+
 - **Recorder**: runs your shell (or any command) in a PTY and streams events to a file.
 - **Editable format**: recordings are saved as `.take`, a line-based text format made for editing by hand. Typed
   commands are one readable line, delays are relative, and escape codes look like `\e[32m`.
@@ -220,6 +222,7 @@ task ci             # tidy, format, licenses, lint, test, govulncheck
 task play           # play examples/demo.take (or: task play -- my.take)
 task edit           # open the editor on the demo (or: task edit -- my.take)
 task serve          # gallery of examples/
+task docs           # export the README demo (docs/demo.svg) from examples/demo.take
 ```
 
 ## Layout
@@ -234,6 +237,7 @@ task serve          # gallery of examples/
 | `web/static/gotake-player.js` | the embeddable player, with no build step |
 | `cmd/gotake/` | CLI |
 | `examples/demo.take` | demo made only from `gotake inject` commands |
+| `docs/demo.svg` | the README demo, made with `task docs` |
 | `examples/player.html` | web player examples: data attributes, chapters by marker, JavaScript API |
 
 ## License
