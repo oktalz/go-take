@@ -133,6 +133,7 @@ type term struct {
 	vt      vt10x.Terminal
 	kitty   *kitty
 	pending string // output held back until the escape sequence it starts is complete
+	synced  bool   // inside a synchronized update (mode 2026): the screen is half drawn
 	theme   Theme
 }
 
@@ -146,6 +147,12 @@ const (
 	st          = "\x1b\\"
 	// maxPending caps an unterminated graphics command, so a broken one cannot hide the rest.
 	maxPending = 256 << 20
+	// Programs wrap a redraw in a synchronized update so the terminal shows it at
+	// once. Frames are not taken inside one, for at most maxSync seconds, as
+	// terminals also give up waiting.
+	syncBegin = "\x1b[?2026h"
+	syncEnd   = "\x1b[?2026l"
+	maxSync   = 1.0
 )
 
 func newTerm(c *cast.Cast, theme Theme) *term {
@@ -205,6 +212,9 @@ func (t *term) write(s string) {
 // text feeds output without graphics commands to the emulator, fixing up full resets.
 func (t *term) text(s string) {
 	s = widen(t.kitty.placeholders(s))
+	if b, e := strings.LastIndex(s, syncBegin), strings.LastIndex(s, syncEnd); b >= 0 || e >= 0 {
+		t.synced = b > e
+	}
 	for {
 		i := strings.Index(s, ris)
 		if i < 0 {
@@ -319,18 +329,30 @@ func Frames(c *cast.Cast, o Options) []Frame {
 	step := 1 / o.FPS
 
 	frames := []Frame{{Time: 0, Screen: tm.snapshot()}}
+	syncFrom := -1.0 // when the synchronized update being drawn began
 	for i := 0; i < len(c.Events); {
 		start := ts[i]
 		for i < len(c.Events) && ts[i]-start < step {
 			tm.apply(c.Events[i])
 			i++
 		}
+		at := ts[i-1]
+		if tm.synced && i < len(c.Events) {
+			if syncFrom < 0 {
+				syncFrom = start
+			}
+			if ts[i]-syncFrom < maxSync { // the update goes on before the terminal gives up
+				continue
+			}
+			at = max(at, syncFrom+maxSync)
+		} else {
+			syncFrom = -1
+		}
 		s := tm.snapshot()
 		last := &frames[len(frames)-1]
 		if s.equal(last.Screen) {
 			continue
 		}
-		at := ts[i-1]
 		if at-last.Time < step { // keep frames at least one step apart
 			at = last.Time + step
 		}
@@ -358,13 +380,21 @@ func Frames(c *cast.Cast, o Options) []Frame {
 func ScreenAt(c *cast.Cast, t float64, o Options) *Screen {
 	o = o.withDefaults(c)
 	tm := newTerm(c, *o.Theme)
-	acc := 0.0
+	acc, syncFrom := 0.0, -1.0
 	for _, e := range c.Events {
 		acc += e.Delay
-		if t >= 0 && acc > t+1e-9 {
+		// past t, only to finish a synchronized update, as the terminal would show it
+		if t >= 0 && acc > t+1e-9 && (!tm.synced || acc-syncFrom > maxSync) {
 			break
 		}
 		tm.apply(e)
+		switch {
+		case !tm.synced:
+			syncFrom = -1
+		case syncFrom < 0:
+			syncFrom = acc
+		default:
+		}
 	}
 	return tm.snapshot()
 }
