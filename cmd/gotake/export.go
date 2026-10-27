@@ -38,8 +38,8 @@ func (e *exportArgs) register(fs *flag.FlagSet) {
 	fs.Var((*windowFlag)(&e.opts), "window",
 		"draw a window title bar: -window for this system's style, or -window=linux, windows or mac")
 	fs.BoolVar(&e.opts.HideCursor, "no-cursor", false, "do not draw the cursor")
-	fs.Var((*listFlag)(&e.opts.Fonts), "font",
-		"font file (TTF, OTF, TTC) for gif and png, tried before Go Mono; repeat for more (default $"+export.FontEnv+")")
+	fs.Var((*listFlag)(&e.opts.Fonts), "font", "font file (TTF, OTF, TTC) for gif and png, "+
+		"tried before Go Mono; repeat for more (default $"+export.FontEnv+")")
 	fs.BoolVar(&e.opts.NoSystemFonts, "no-system-fonts", false,
 		"do not look up installed fonts for characters the fonts lack (gif, png)")
 	fs.StringVar(&e.html.Title, "title", "", "page title (html)")
@@ -120,7 +120,7 @@ func cmdExport(args []string) error {
 // windowFlag is -window (the style of this system) or -window=STYLE.
 type windowFlag export.Options
 
-func (w *windowFlag) IsBoolFlag() bool { return true }
+func (*windowFlag) IsBoolFlag() bool { return true }
 
 func (w *windowFlag) String() string {
 	if w == nil || !w.Window {

@@ -125,15 +125,7 @@ func heavyWidth(light float64) float64 { return light + 2*math.Max(1, math.Round
 func (c *canvas) box(ch rune, light float64) bool {
 	heavy := heavyWidth(light)
 	cx, cy := snap(c.w/2), snap(c.h/2)
-	switch {
-	case ch >= 0x2504 && ch <= 0x250B, ch >= 0x254C && ch <= 0x254F:
-		c.dashed(ch, cx, cy, light, heavy)
-		return true
-	case ch >= 0x256D && ch <= 0x2570:
-		c.arc(ch, cx, cy, light)
-		return true
-	case ch >= 0x2571 && ch <= 0x2573:
-		c.diagonal(ch, light)
+	if c.boxShape(ch, cx, cy, light, heavy) {
 		return true
 	}
 	seg, ok := boxSegments[ch]
@@ -150,8 +142,9 @@ func (c *canvas) box(ch rune, light float64) bool {
 			return heavy
 		case 3:
 			return 2*g + light
+		default:
+			return 0
 		}
-		return 0
 	}
 	// reach is how far a light or heavy segment runs past the center: far enough to
 	// cover the lines crossing it, or only up to the near line of a double line it ends at
@@ -184,6 +177,7 @@ func (c *canvas) box(ch rune, light float64) bool {
 				c.rect(xc-t/2, yc-reach(2), xc+t/2, c.h)
 			case 3:
 				c.rect(0, yc-t/2, xc+reach(3), yc+t/2)
+			default:
 			}
 		case dir == 1:
 			c.rect(xc+inner(seg[0])-light/2, yc-g-light/2, c.w, yc-g+light/2)
@@ -194,10 +188,25 @@ func (c *canvas) box(ch rune, light float64) bool {
 		case dir == 2:
 			c.rect(xc-g-light/2, yc+inner(seg[3])-light/2, xc-g+light/2, c.h)
 			c.rect(xc+g-light/2, yc+inner(seg[1])-light/2, xc+g+light/2, c.h)
-		case dir == 0:
+		default: // dir == 0
 			c.rect(xc-g-light/2, 0, xc-g+light/2, yc-inner(seg[3])+light/2)
 			c.rect(xc+g-light/2, 0, xc+g+light/2, yc-inner(seg[1])+light/2)
 		}
+	}
+	return true
+}
+
+// boxShape draws the box drawing characters that are not made of straight segments.
+func (c *canvas) boxShape(ch rune, cx, cy, light, heavy float64) bool {
+	switch {
+	case ch >= 0x2504 && ch <= 0x250B, ch >= 0x254C && ch <= 0x254F:
+		c.dashed(ch, cx, cy, light, heavy)
+	case ch >= 0x256D && ch <= 0x2570:
+		c.arc(ch, cx, cy, light)
+	case ch >= 0x2571 && ch <= 0x2573:
+		c.diagonal(ch, light)
+	default:
+		return false
 	}
 	return true
 }
@@ -209,6 +218,7 @@ func (c *canvas) dashed(ch rune, cx, cy, light, heavy float64) {
 		n = 4
 	case ch >= 0x254C:
 		n = 2
+	default:
 	}
 	t := light
 	if (ch-0x2504)%2 == 1 || (ch >= 0x254C && (ch-0x254C)%2 == 1) {
@@ -236,13 +246,13 @@ func (c *canvas) arc(ch rune, cx, cy, light float64) {
 	r := math.Min(c.w, c.h) / 2
 	sx, sy := 1.0, 1.0 // direction of the arc's center from the line crossing
 	switch ch {
-	case 0x256D: // ╭ down and right
 	case 0x256E: // ╮ down and left
 		sx = -1
 	case 0x256F: // ╯ up and left
 		sx, sy = -1, -1
 	case 0x2570: // ╰ up and right
 		sy = -1
+	default: // ╭ down and right
 	}
 	ax, ay := x0+sx*r, y0+sy*r // arc center
 	c.fill(func(x, y float64) bool {
@@ -351,5 +361,6 @@ func (c *canvas) powerline(ch rune, light float64) {
 		c.fill(func(x, y float64) bool { return (x/w)*(x/w)+((y-h/2)/(h/2))*((y-h/2)/(h/2)) <= 1 })
 	case 0xE0B6: // solid half circle on the right edge
 		c.fill(func(x, y float64) bool { return ((w-x)/w)*((w-x)/w)+((y-h/2)/(h/2))*((y-h/2)/(h/2)) <= 1 })
+	default:
 	}
 }

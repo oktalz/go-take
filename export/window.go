@@ -43,7 +43,8 @@ func DefaultWindowStyle() string {
 	if os.Getenv("WSL_DISTRO_NAME") != "" {
 		return WindowWindows
 	}
-	if b, err := os.ReadFile("/proc/sys/kernel/osrelease"); err == nil && strings.Contains(strings.ToLower(string(b)), "microsoft") {
+	if b, err := os.ReadFile("/proc/sys/kernel/osrelease"); err == nil &&
+		strings.Contains(strings.ToLower(string(b)), "microsoft") {
 		return WindowWindows
 	}
 	return WindowLinux
@@ -126,8 +127,10 @@ func windowChrome(o Options, width float64) chrome {
 	switch o.WindowStyle {
 	case WindowMac:
 		r := h * 0.2
-		for i, col := range []color.RGBA{{0xff, 0x5f, 0x57, 0xff}, {0xfe, 0xbc, 0x2e, 0xff}, {0x28, 0xc8, 0x40, 0xff}} {
-			c.shapes = append(c.shapes, shape{kind: shapeCircle, x0: pad + r + float64(i)*r*3.2, y0: h / 2, r: r, color: col})
+		lights := []color.RGBA{{0xff, 0x5f, 0x57, 0xff}, {0xfe, 0xbc, 0x2e, 0xff}, {0x28, 0xc8, 0x40, 0xff}}
+		for i, col := range lights {
+			x := pad + r + float64(i)*r*3.2
+			c.shapes = append(c.shapes, shape{kind: shapeCircle, x0: x, y0: h / 2, r: r, color: col})
 		}
 		c.shapes = append(c.shapes, text(width/2, true, false))
 	case WindowWindows:
@@ -233,12 +236,12 @@ var (
 )
 
 // titleFont is the sans-serif Go font (Go Mono's sibling) used for window titles, as real title bars use.
-func titleFont(bold bool) *sfnt.Font {
+func titleFont(s shape) *sfnt.Font {
 	titleFontsOnce.Do(func() {
 		titleFonts[0], _ = opentype.Parse(goregular.TTF)
 		titleFonts[1], _ = opentype.Parse(gobold.TTF)
 	})
-	if bold {
+	if s.bold {
 		return titleFonts[1]
 	}
 	return titleFonts[0]
@@ -246,7 +249,7 @@ func titleFont(bold bool) *sfnt.Font {
 
 // titleMask draws the title text, cut short with "…" when it does not fit.
 func (r *rasterizer) titleMask(s shape, width int) (*image.Alpha, image.Point) {
-	f := titleFont(s.bold)
+	f := titleFont(s)
 	if f == nil {
 		return nil, image.Point{}
 	}
@@ -298,8 +301,10 @@ func writeSVGWindow(w io.Writer, c chrome, width float64) {
 			}
 			// an inline style: the export's stylesheet gives every <text> the terminal's monospace font
 			p(`<text x="%g" y="%g" fill="%s" font-size="%g" text-anchor="%s" dominant-baseline="central"%s `+
-				`style="font-family:system-ui,-apple-system,'Segoe UI',Cantarell,Ubuntu,sans-serif;white-space:pre">%s</text>`,
+				`style="font-family:system-ui,-apple-system,'Segoe UI',Cantarell,Ubuntu,sans-serif;`+
+				`white-space:pre">%s</text>`,
 				s.x0, s.y0, cssColor(s.color), s.size, anchor, weight, html.EscapeString(s.text))
+		default:
 		}
 	}
 	p("\n")

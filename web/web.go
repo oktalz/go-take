@@ -426,6 +426,7 @@ func Gallery(dir string) http.Handler {
 				files = append(files, filepath.ToSlash(rel))
 			case strings.EqualFold(filepath.Ext(p), ".html"):
 				pages = append(pages, filepath.ToSlash(rel))
+			default:
 			}
 			return nil
 		})

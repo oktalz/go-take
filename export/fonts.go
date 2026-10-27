@@ -79,7 +79,9 @@ var parsedFonts sync.Map
 func loadFont(path string, index int) (*sfnt.Font, error) {
 	key := path + "#" + strconv.Itoa(index)
 	if f, ok := parsedFonts.Load(key); ok {
-		return f.(*sfnt.Font), nil
+		if sf, ok := f.(*sfnt.Font); ok {
+			return sf, nil
+		}
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

@@ -163,7 +163,8 @@ func TestTransparentBackground(t *testing.T) {
 	}
 	for i, f := range g.Image {
 		if f.Bounds() != g.Image[0].Bounds() || g.Disposal[i] != gif.DisposalBackground {
-			t.Fatalf("frame %d: bounds %v, disposal %d; want whole frames cleared after showing", i, f.Bounds(), g.Disposal[i])
+			t.Fatalf("frame %d: bounds %v, disposal %d; want whole frames cleared after showing",
+				i, f.Bounds(), g.Disposal[i])
 		}
 	}
 
@@ -217,7 +218,10 @@ func TestFontOptions(t *testing.T) {
 }
 
 func TestWindowStyles(t *testing.T) {
-	for in, want := range map[string]string{"linux": WindowLinux, "Windows": WindowWindows, "macos": WindowMac, "": DefaultWindowStyle()} {
+	styles := map[string]string{
+		"linux": WindowLinux, "Windows": WindowWindows, "macos": WindowMac, "": DefaultWindowStyle(),
+	}
+	for in, want := range styles {
 		if got, err := windowStyle(in); err != nil || got != want {
 			t.Errorf("windowStyle(%q) = %q, %v; want %q", in, got, err, want)
 		}

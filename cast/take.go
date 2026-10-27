@@ -150,7 +150,7 @@ func (e *takeEncoder) WriteEvent(ev Event) error {
 		return nil
 	}
 	e.writeRun()
-	e.writeEvent(ev)
+	e.writeSingle(ev)
 	return nil
 }
 
@@ -165,11 +165,11 @@ func (e *takeEncoder) Close() error {
 func (e *takeEncoder) line(words ...string) {
 	for i, w := range words {
 		if i > 0 {
-			e.w.WriteByte(' ')
+			_ = e.w.WriteByte(' ')
 		}
-		e.w.WriteString(w)
+		_, _ = e.w.WriteString(w)
 	}
-	e.w.WriteByte('\n')
+	_ = e.w.WriteByte('\n')
 }
 
 // isTypedChar reports whether e can be part of a "type" line: output of one printable character.
@@ -188,7 +188,7 @@ func (e *takeEncoder) writeRun() {
 	run := e.run
 	e.run = e.run[:0]
 	if len(run) == 1 {
-		e.writeEvent(run[0])
+		e.writeSingle(run[0])
 	}
 	if len(run) < 2 {
 		return
@@ -210,7 +210,8 @@ func (e *takeEncoder) writeRun() {
 	e.line(words...)
 }
 
-func (e *takeEncoder) writeEvent(ev Event) {
+// writeSingle writes one event as its own line.
+func (e *takeEncoder) writeSingle(ev Event) {
 	word, ok := takeWords[ev.Code]
 	if !ok {
 		e.line(keyword("event"), FormatDelay(ev.Delay), quoteTake(ev.Code), quoteString(ev.Data))
@@ -237,7 +238,7 @@ func quoteTake(s string) string {
 // quoteString returns s as a quoted .take string.
 func quoteString(s string) string {
 	var b strings.Builder
-	b.WriteByte('"')
+	_ = b.WriteByte('"')
 	for i := 0; i < len(s); {
 		r, size := utf8.DecodeRuneInString(s[i:])
 		switch {
@@ -266,7 +267,7 @@ func quoteString(s string) string {
 		}
 		i += size
 	}
-	b.WriteByte('"')
+	_ = b.WriteByte('"')
 	return b.String()
 }
 
@@ -277,8 +278,8 @@ func isBareWord(s string) bool {
 		return false
 	}
 	for _, c := range []byte(s) {
-		ok := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.IndexByte("_-.:/+", c) >= 0
-		if !ok {
+		alnum := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+		if !alnum && strings.IndexByte("_-.:/+", c) < 0 {
 			return false
 		}
 	}
@@ -344,59 +345,10 @@ func readTake(data []byte) (*Cast, error) {
 // takeLine applies a header line to c, or returns the events of an event line.
 // For "wait" it returns one event holding just the delay.
 func (c *Cast) takeLine(word string, args []string) ([]Event, error) {
-	h := &c.Header
+	if ok, err := c.headerLine(word, args); ok {
+		return nil, err
+	}
 	switch word {
-	case "term":
-		if err := wantArgs(args, 1, 2); err != nil {
-			return nil, err
-		}
-		if _, err := fmt.Sscanf(args[0], "%dx%d", &h.Term.Cols, &h.Term.Rows); err != nil {
-			return nil, fmt.Errorf("size %q, want COLSxROWS", args[0])
-		}
-		if len(args) > 1 {
-			h.Term.Type = args[1]
-		}
-	case "term-version":
-		return nil, setString(&h.Term.Version, args)
-	case "theme":
-		if err := wantArgs(args, 2, 3); err != nil {
-			return nil, err
-		}
-		h.Term.Theme = &Theme{FG: args[0], BG: args[1]}
-		if len(args) > 2 {
-			h.Term.Theme.Palette = args[2]
-		}
-	case "title":
-		return nil, setString(&h.Title, args)
-	case "command":
-		return nil, setString(&h.Command, args)
-	case "timestamp":
-		if err := wantArgs(args, 1, 1); err != nil {
-			return nil, err
-		}
-		ts, err := strconv.ParseInt(args[0], 10, 64)
-		h.Timestamp = ts
-		return nil, err
-	case "idle":
-		if err := wantArgs(args, 1, 1); err != nil {
-			return nil, err
-		}
-		d, err := parseDelay(args[0])
-		h.IdleTimeLimit = d
-		return nil, err
-	case "env":
-		if err := wantArgs(args, 2, 2); err != nil {
-			return nil, err
-		}
-		if h.Env == nil {
-			h.Env = map[string]string{}
-		}
-		h.Env[args[0]] = args[1]
-	case "tag":
-		if err := wantArgs(args, 1, 1); err != nil {
-			return nil, err
-		}
-		h.Tags = append(h.Tags, args[0])
 	case "wait":
 		if err := wantArgs(args, 1, 1); err != nil {
 			return nil, err
@@ -412,30 +364,95 @@ func (c *Cast) takeLine(word string, args []string) ([]Event, error) {
 		d, err := parseDelay(args[0])
 		return []Event{{Delay: d, Code: args[1], Data: args[2]}}, err
 	default:
-		code := ""
-		for k, v := range takeWords {
-			if v == word {
-				code = k
-			}
+		return keywordEvent(word, args)
+	}
+}
+
+// headerLine applies a header line to c. It reports false for other lines.
+func (c *Cast) headerLine(word string, args []string) (bool, error) {
+	h := &c.Header
+	switch word {
+	case "term":
+		if err := wantArgs(args, 1, 2); err != nil {
+			return true, err
 		}
-		if code == "" {
-			return nil, errors.New("unknown keyword")
+		if _, err := fmt.Sscanf(args[0], "%dx%d", &h.Term.Cols, &h.Term.Rows); err != nil {
+			return true, fmt.Errorf("size %q, want COLSxROWS", args[0])
 		}
-		minArgs := 2
-		if code == Marker {
-			minArgs = 1
+		if len(args) > 1 {
+			h.Term.Type = args[1]
 		}
-		if err := wantArgs(args, minArgs, 2); err != nil {
-			return nil, err
+	case "term-version":
+		return true, setString(&h.Term.Version, args)
+	case "theme":
+		if err := wantArgs(args, 2, 3); err != nil {
+			return true, err
+		}
+		h.Term.Theme = &Theme{FG: args[0], BG: args[1]}
+		if len(args) > 2 {
+			h.Term.Theme.Palette = args[2]
+		}
+	case "title":
+		return true, setString(&h.Title, args)
+	case "command":
+		return true, setString(&h.Command, args)
+	case "timestamp":
+		if err := wantArgs(args, 1, 1); err != nil {
+			return true, err
+		}
+		ts, err := strconv.ParseInt(args[0], 10, 64)
+		h.Timestamp = ts
+		return true, err
+	case "idle":
+		if err := wantArgs(args, 1, 1); err != nil {
+			return true, err
 		}
 		d, err := parseDelay(args[0])
-		e := Event{Delay: d, Code: code}
-		if len(args) > 1 {
-			e.Data = args[1]
+		h.IdleTimeLimit = d
+		return true, err
+	case "env":
+		if err := wantArgs(args, 2, 2); err != nil {
+			return true, err
 		}
-		return []Event{e}, err
+		if h.Env == nil {
+			h.Env = map[string]string{}
+		}
+		h.Env[args[0]] = args[1]
+	case "tag":
+		if err := wantArgs(args, 1, 1); err != nil {
+			return true, err
+		}
+		h.Tags = append(h.Tags, args[0])
+	default:
+		return false, nil
 	}
-	return nil, nil
+	return true, nil
+}
+
+// keywordEvent returns the event of an out, in, resize, marker or exit line.
+func keywordEvent(word string, args []string) ([]Event, error) {
+	code := ""
+	for k, v := range takeWords {
+		if v == word {
+			code = k
+		}
+	}
+	if code == "" {
+		return nil, errors.New("unknown keyword")
+	}
+	minArgs := 2
+	if code == Marker {
+		minArgs = 1
+	}
+	if err := wantArgs(args, minArgs, 2); err != nil {
+		return nil, err
+	}
+	d, err := parseDelay(args[0])
+	e := Event{Delay: d, Code: code}
+	if len(args) > 1 {
+		e.Data = args[1]
+	}
+	return []Event{e}, err
 }
 
 // typeEvents expands `type DELAY "text" [D2 ... DN | every=D]` into one output
