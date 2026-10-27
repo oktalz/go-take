@@ -31,8 +31,8 @@ const FontEnv = "GOTAKE_FONT"
 // fontStyle files of one family: regular, bold, italic, bold italic. A nil
 // style is drawn with the regular font (bold is emboldened).
 type fontFamily struct {
-	name  string
 	fonts [4]*sfnt.Font
+	name  string
 }
 
 // has reports whether the regular font has a glyph for ch.

@@ -45,9 +45,9 @@ func init() {
 
 // canvas is a supersampled coverage grid for one cell.
 type canvas struct {
+	cov  []bool
 	w, h float64 // cell size in pixels
 	ss   int     // samples per pixel side
-	cov  []bool
 }
 
 const supersample = 4

@@ -2,6 +2,7 @@ package cast
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -50,9 +51,9 @@ func (c *Cast) TrimExit() int {
 
 	// the output event in which the exit starts
 	cut := segs[len(segs)-1]
-	for k := len(segs) - 1; k >= 0; k-- {
-		if segs[k].begin <= at {
-			cut = segs[k]
+	for _, seg := range slices.Backward(segs) {
+		if seg.begin <= at {
+			cut = seg
 			break
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"io"
 	"math"
 
+	"golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
 
@@ -23,10 +24,11 @@ const blendLevels = 4
 // rasterizer draws screens into paletted images.
 type rasterizer struct {
 	glyphs   map[glyphKey]*image.Alpha
+	images   map[*Placement]*image.Paletted // Kitty graphics dithered to the palette
 	pal      *paletteBuilder
+	faces    faceCache
 	families []*fontFamily // Options.Fonts, then Go Mono
 	chrome   chrome        // window title bar, when Options.Window is set
-	faces    faceCache
 	o        Options
 	light    float64 // width of a light box drawing line
 	cw, ch   int     // cell size in pixels
@@ -45,7 +47,7 @@ type glyphKey struct {
 
 func newRasterizer(cols, rows int, o Options) (*rasterizer, error) {
 	r := &rasterizer{
-		o: o, glyphs: map[glyphKey]*image.Alpha{},
+		o: o, glyphs: map[glyphKey]*image.Alpha{}, images: map[*Placement]*image.Paletted{},
 		cols: cols, rows: rows, pad: o.Padding,
 	}
 	for _, p := range o.Fonts {
@@ -240,9 +242,44 @@ func (r *rasterizer) prepare(screens []*Screen) {
 		r.pal.overflow = true
 		r.bgIndex = uint8(r.pal.colors.Index(r.o.Theme.BG))
 	}
+	r.prepareImages(placements(screens))
 	if r.o.Theme.Transparent {
 		// GIF and PNG encoders treat a palette entry with alpha 0 as transparent
 		r.pal.colors[r.bgIndex] = color.RGBA{}
+	}
+}
+
+// prepareImages fills the free palette entries with the images' colors and
+// dithers each image to the palette.
+func (r *rasterizer) prepareImages(ps []*Placement) {
+	if len(ps) == 0 {
+		return
+	}
+	scaled := make([]*image.NRGBA, len(ps))
+	for i, p := range ps {
+		scaled[i] = p.scale(r.cw, r.ch)
+	}
+	for _, c := range quantize(scaled, r.o.Theme.BG, 256-len(r.pal.colors)) {
+		r.pal.add(c)
+	}
+	bg := r.o.Theme.BG
+	for i, p := range ps {
+		src := scaled[i]
+		flat := image.NewRGBA(src.Rect)
+		for j := 0; j < len(src.Pix); j += 4 {
+			c := over(src.Pix[j:j+4], bg)
+			copy(flat.Pix[j:j+4], []uint8{c.R, c.G, c.B, 255})
+		}
+		img := image.NewPaletted(src.Rect, r.pal.colors)
+		draw.FloydSteinberg.Draw(img, img.Rect, flat, image.Point{})
+		if r.o.Theme.Transparent { // see-through pixels stay see-through
+			for j := range img.Pix {
+				if src.Pix[j*4+3] < 128 {
+					img.Pix[j] = r.bgIndex
+				}
+			}
+		}
+		r.images[p] = img
 	}
 }
 
@@ -262,10 +299,58 @@ func (r *rasterizer) render(s *Screen) *image.Paletted {
 			if cursor && x == s.CursorX && y == s.CursorY {
 				fg, bg = bg, fg
 			}
+			if c.Image != nil {
+				r.drawImageCell(img, x, y, c)
+				continue
+			}
 			r.drawCell(img, x, y, c, fg, bg)
 		}
 	}
 	return img
+}
+
+// imageCell returns the cell's piece of its image in the placement's pixels,
+// and the cell's top left corner in the output.
+func (r *rasterizer) imageCell(x, y int, c Cell) (piece image.Rectangle, at image.Point) {
+	px, py := int(c.ImageCol)*r.cw, int(c.ImageRow)*r.ch
+	return image.Rect(px, py, px+r.cw, py+r.ch), image.Pt(r.pad+x*r.cw, r.pad+r.barH+y*r.ch)
+}
+
+func (r *rasterizer) drawImageCell(img *image.Paletted, x, y int, c Cell) {
+	src := r.images[c.Image]
+	piece, at := r.imageCell(x, y, c)
+	for py := range r.ch {
+		copy(img.Pix[(at.Y+py)*img.Stride+at.X:][:r.cw], src.Pix[(piece.Min.Y+py)*src.Stride+piece.Min.X:])
+	}
+}
+
+// trueColor redraws the image cells of s over a full color copy of img.
+func (r *rasterizer) trueColor(img *image.Paletted, s *Screen) image.Image {
+	out := image.NewNRGBA(img.Rect)
+	draw.Draw(out, out.Rect, img, image.Point{}, draw.Src)
+	scaled := map[*Placement]*image.NRGBA{}
+	for y := 0; y < s.Rows && y < r.rows; y++ {
+		for x := 0; x < s.Cols && x < r.cols; x++ {
+			c := s.At(x, y)
+			if c.Image == nil {
+				continue
+			}
+			src := scaled[c.Image]
+			if src == nil {
+				src = c.Image.scale(r.cw, r.ch)
+				scaled[c.Image] = src
+			}
+			piece, at := r.imageCell(x, y, c)
+			dst := image.Rectangle{Min: at, Max: at.Add(piece.Size())}
+			bg := c.BG
+			if r.o.Theme.Transparent && bg == r.o.Theme.BG {
+				bg = color.RGBA{}
+			}
+			draw.Draw(out, dst, image.NewUniform(bg), image.Point{}, draw.Src)
+			draw.Draw(out, dst, src, piece.Min, draw.Over)
+		}
+	}
+	return out
 }
 
 func (r *rasterizer) drawCell(img *image.Paletted, x, y int, c Cell, fg, bg color.RGBA) {
@@ -361,7 +446,11 @@ func PNG(w io.Writer, c *cast.Cast, o Options) error {
 		return err
 	}
 	r.prepare([]*Screen{s})
-	return png.Encode(w, r.render(s))
+	img := r.render(s)
+	if len(r.images) > 0 { // pictures look better than a 256 color palette allows
+		return png.Encode(w, r.trueColor(img, s))
+	}
+	return png.Encode(w, img)
 }
 
 func maxSize(frames []Frame) (cols, rows int) {

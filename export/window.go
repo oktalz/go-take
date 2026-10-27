@@ -94,8 +94,8 @@ type shape struct {
 	text           string
 	x0, y0, x1, y1 float64
 	r, w, size     float64
-	color          color.RGBA
 	kind           shapeKind
+	color          color.RGBA
 	centered, bold bool
 }
 

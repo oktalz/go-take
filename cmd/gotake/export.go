@@ -19,8 +19,8 @@ import (
 type exportArgs struct {
 	format, out  string
 	html         export.HTMLOptions
-	opts         export.Options
 	from, to, at timeFlag
+	opts         export.Options
 }
 
 func (e *exportArgs) register(fs *flag.FlagSet) {

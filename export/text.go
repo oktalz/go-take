@@ -23,7 +23,15 @@ func Transcript(w io.Writer, c *cast.Cast) error {
 		if e.Code != cast.Output {
 			continue
 		}
+		placeholder := false
 		for _, r := range cast.StripANSI(e.Data) {
+			if _, mark := diacriticIndex[r]; mark && placeholder {
+				continue // row and column of a Kitty image placeholder
+			}
+			placeholder = r == kittyPlaceholder
+			if placeholder {
+				r = ' '
+			}
 			switch r {
 			case '\n':
 				flush()

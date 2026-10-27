@@ -22,7 +22,15 @@ const (
 
 // Options configures rendering. The zero value gives sensible defaults.
 type Options struct {
-	Theme         *Theme  // colors (default: from the recording header)
+	Theme *Theme // colors (default: from the recording header)
+	// WindowStyle is the title bar's look: WindowLinux, WindowWindows or WindowMac
+	// (default: the system gotake runs on).
+	WindowStyle string
+	// WindowTitle is the text in the title bar (default: the recording's title or command).
+	WindowTitle string
+	// Fonts are font files (TTF, OTF, TTC) for GIF and PNG, tried in order before
+	// the built-in Go Mono (default: the GOTAKE_FONT environment variable).
+	Fonts         []string
 	Speed         float64 // playback speed (default 1)
 	IdleTimeLimit float64 // cap pauses (0 = header value, <0 = no cap)
 	FPS           float64 // maximum frames per second for animations (default 30, max 50)
@@ -31,15 +39,7 @@ type Options struct {
 	At            float64 // time of the frame for still images (<0 = end)
 	Padding       int     // space around the terminal in pixels (default 12)
 	Window        bool    // draw a window title bar
-	// WindowStyle is the title bar's look: WindowLinux, WindowWindows or WindowMac
-	// (default: the system gotake runs on).
-	WindowStyle string
-	// WindowTitle is the text in the title bar (default: the recording's title or command).
-	WindowTitle string
-	HideCursor  bool // do not draw the cursor
-	// Fonts are font files (TTF, OTF, TTC) for GIF and PNG, tried in order before
-	// the built-in Go Mono (default: the GOTAKE_FONT environment variable).
-	Fonts []string
+	HideCursor    bool    // do not draw the cursor
 	// NoSystemFonts stops looking up installed fonts for characters the fonts lack,
 	// so the output does not depend on the machine.
 	NoSystemFonts bool
@@ -85,8 +85,11 @@ func (o Options) withDefaults(c *cast.Cast) Options {
 
 // Cell is a rendered terminal cell with resolved colors.
 type Cell struct {
+	Image     *Placement // Kitty graphics shown in the cell (Char is then a space)
 	Char      rune
 	FG, BG    color.RGBA
+	ImageCol  uint8 // which piece of Image the cell shows
+	ImageRow  uint8
 	Bold      bool
 	Italic    bool
 	Underline bool
@@ -125,9 +128,10 @@ type Frame struct {
 }
 
 type term struct {
-	vt    vt10x.Terminal
-	theme Theme
-	esc   bool // the last output ended in ESC, so a reset may continue in the next event
+	vt      vt10x.Terminal
+	kitty   *kitty
+	pending string // output held back until the escape sequence it starts is complete
+	theme   Theme
 }
 
 // A full reset (RIS, printed by the reset command) should clear the screen, but
@@ -136,11 +140,15 @@ type term struct {
 const (
 	ris         = "\x1bc"
 	clearScreen = "\x1b[2J"
+	kittyAPC    = "\x1b_G" // Kitty graphics command, ended by ST
+	st          = "\x1b\\"
+	// maxPending caps an unterminated graphics command, so a broken one cannot hide the rest.
+	maxPending = 256 << 20
 )
 
 func newTerm(c *cast.Cast, theme Theme) *term {
 	cols, rows := max(c.Header.Term.Cols, 1), max(c.Header.Term.Rows, 1)
-	return &term{vt: vt10x.New(vt10x.WithSize(cols, rows)), theme: theme}
+	return &term{vt: vt10x.New(vt10x.WithSize(cols, rows)), kitty: newKitty(), theme: theme}
 }
 
 func (t *term) apply(e cast.Event) {
@@ -156,22 +164,96 @@ func (t *term) apply(e cast.Event) {
 	}
 }
 
-// write feeds output to the emulator, fixing up full resets.
+// write feeds output to the emulator, taking out Kitty graphics commands.
+// Escape sequences split across events are held back until complete.
 func (t *term) write(s string) {
-	if t.esc && strings.HasPrefix(s, "c") {
-		_, _ = t.vt.Write([]byte("c" + clearScreen))
-		s = s[1:]
+	s = t.pending + s
+	t.pending = ""
+	for {
+		i := strings.Index(s, kittyAPC)
+		if i < 0 {
+			break
+		}
+		t.text(s[:i])
+		s = s[i:]
+		end := strings.IndexByte(s[len(kittyAPC):], 0x1b)
+		if end < 0 || len(kittyAPC)+end+1 == len(s) { // not ended yet
+			if len(s) <= maxPending {
+				t.pending = s
+			}
+			return
+		}
+		end += len(kittyAPC)
+		if strings.HasPrefix(s[end:], st) {
+			t.graphics(s[len(kittyAPC):end])
+			end += len(st)
+		}
+		s = s[end:] // a command cut short by another escape is dropped
 	}
+	switch {
+	case strings.HasSuffix(s, "\x1b"):
+		s, t.pending = s[:len(s)-1], "\x1b"
+	case strings.HasSuffix(s, "\x1b_"):
+		s, t.pending = s[:len(s)-2], "\x1b_"
+	default:
+	}
+	t.text(s)
+}
+
+// text feeds output without graphics commands to the emulator, fixing up full resets.
+func (t *term) text(s string) {
+	s = t.kitty.placeholders(s)
 	for {
 		i := strings.Index(s, ris)
 		if i < 0 {
 			break
 		}
 		_, _ = t.vt.Write([]byte(s[:i+len(ris)] + clearScreen))
+		t.kitty = newKitty()
 		s = s[i+len(ris):]
 	}
 	_, _ = t.vt.Write([]byte(s))
-	t.esc = strings.HasSuffix(s, "\x1b")
+}
+
+func (t *term) graphics(cmd string) { t.kitty.command(cmd, t) }
+
+func (t *term) imageAt(x, y int) (uint32, bool) {
+	g := t.vt.Cell(x, y)
+	_, _, ok := imageCellPos(g.Char)
+	return uint32(g.FG), ok
+}
+
+func (t *term) cursor() (x, y int) {
+	c := t.vt.Cursor()
+	return c.X, c.Y
+}
+
+func (t *term) size() (cols, rows int) { return t.vt.Size() }
+
+// place draws a direct placement's image cells at the cursor, colored with
+// the id that names it, and moves the cursor past it unless told not to.
+func (t *term) place(id uint32, p *Placement) {
+	cur := t.vt.Cursor()
+	cols, rows := t.vt.Size()
+	w, h := min(p.Cols, cols-cur.X, imageCellMax+1), min(p.Rows, imageCellMax+1)
+	var b strings.Builder
+	_, _ = fmt.Fprintf(&b, "\x1b7\x1b[0;38;2;%d;%d;%dm", id>>16&0xff, id>>8&0xff, id&0xff)
+	for row := range h {
+		if row > 0 { // next line, scrolling at the bottom
+			_, _ = fmt.Fprintf(&b, "\x1bD\x1b[%dG", cur.X+1)
+		}
+		for col := range w {
+			_, _ = b.WriteRune(imageCell(row, col))
+		}
+	}
+	_, _ = t.vt.Write([]byte(b.String()))
+	end := t.vt.Cursor()
+	scrolled := max(cur.Y+h-1-(rows-1), 0)
+	x, y := cur.X, max(cur.Y-scrolled, 0)
+	if !p.stay { // Kitty leaves the cursor after the image's last column, on its last row
+		x, y = min(cur.X+p.Cols, cols-1), end.Y
+	}
+	_, _ = fmt.Fprintf(t.vt, "\x1b8\x1b[%d;%dH", y+1, x+1)
 }
 
 func (t *term) snapshot() *Screen {
@@ -186,10 +268,17 @@ func (t *term) snapshot() *Screen {
 			if ch == 0 {
 				ch = ' '
 			}
-			s.Cells[y*cols+x] = Cell{
+			c := Cell{
 				Char: ch, FG: t.theme.Color(g.FG), BG: t.theme.Color(g.BG),
 				Bold: g.Mode&modeBold != 0, Italic: g.Mode&modeItalic != 0, Underline: g.Mode&modeUnderline != 0,
 			}
+			if row, col, ok := imageCellPos(ch); ok {
+				c = Cell{Char: ' ', FG: c.FG, BG: c.BG}
+				if p := t.kitty.placement(uint32(g.FG)); p != nil && row < p.Rows && col < p.Cols {
+					c.Image, c.ImageRow, c.ImageCol = p, uint8(row), uint8(col)
+				}
+			}
+			s.Cells[y*cols+x] = c
 		}
 	}
 	cur := t.vt.Cursor()

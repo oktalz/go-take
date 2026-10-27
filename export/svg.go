@@ -2,9 +2,12 @@ package export
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/base64"
 	"fmt"
 	"html"
 	"image/color"
+	"image/png"
 	"io"
 	"math"
 	"strings"
@@ -15,6 +18,7 @@ import (
 const svgFonts = `ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono','DejaVu Sans Mono',monospace`
 
 type svgLayout struct {
+	images map[*Placement]int // id of each Kitty graphics image in <defs>
 	o      Options
 	cw, ch float64 // cell size
 	barH   float64
@@ -81,6 +85,13 @@ func writeSVG(w io.Writer, l svgLayout, frames []Frame) error {
 	if l.o.Window {
 		writeSVGWindow(bw, windowChrome(l.o, width), width)
 	}
+	screens := make([]*Screen, len(frames))
+	for i, f := range frames {
+		screens[i] = f.Screen
+	}
+	if err := l.writeImages(bw, placements(screens)); err != nil {
+		return err
+	}
 	p(`<svg x="%g" y="%g" width="%g" height="%g"><g id="f">`+"\n", l.pad, l.pad+l.barH, l.termW(), l.termH())
 	for i, f := range frames {
 		p(`<g transform="translate(0 %g)">`, float64(i)*l.termH())
@@ -96,6 +107,56 @@ func (l svgLayout) writeScreen(w *bufio.Writer, s *Screen) {
 	for y := range s.Rows {
 		l.writeBackgrounds(w, s, y)
 		l.writeText(w, s, y)
+	}
+	for y := range s.Rows {
+		l.writeImageCells(w, s, y)
+	}
+}
+
+// writeImages writes each Kitty graphics placement once, as a PNG sized to its cells.
+func (l *svgLayout) writeImages(w *bufio.Writer, ps []*Placement) error {
+	if len(ps) == 0 {
+		return nil
+	}
+	l.images = map[*Placement]int{}
+	_, _ = w.WriteString("<defs>")
+	for i, p := range ps {
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, p.Image); err != nil {
+			return err
+		}
+		aspect := map[fit]string{fitStretch: "none", fitTop: "xMinYMin meet", fitCenter: "xMidYMid meet"}[p.fit]
+		_, _ = fmt.Fprintf(w,
+			`<image id="img%d" width="%g" height="%g" preserveAspectRatio="%s" href="data:image/png;base64,%s"/>`,
+			i, float64(p.Cols)*l.cw, float64(p.Rows)*l.ch, aspect, base64.StdEncoding.EncodeToString(buf.Bytes()))
+		l.images[p] = i
+	}
+	_, _ = w.WriteString("</defs>\n")
+	return nil
+}
+
+// writeImageCells shows runs of image cells as windows onto their image.
+func (l svgLayout) writeImageCells(w *bufio.Writer, s *Screen, y int) {
+	for x := 0; x < s.Cols; {
+		c := s.At(x, y)
+		end := x + 1
+		if c.Image == nil {
+			x = end
+			continue
+		}
+		for end < s.Cols {
+			n := s.At(end, y)
+			if n.Image != c.Image || n.ImageRow != c.ImageRow || int(n.ImageCol) != int(c.ImageCol)+end-x {
+				break
+			}
+			end++
+		}
+		width := float64(end-x) * l.cw
+		_, _ = fmt.Fprintf(w,
+			`<svg x="%g" y="%g" width="%g" height="%g" viewBox="%g %g %g %g"><use href="#img%d"/></svg>`,
+			float64(x)*l.cw, float64(y)*l.ch, width, l.ch,
+			float64(c.ImageCol)*l.cw, float64(c.ImageRow)*l.ch, width, l.ch, l.images[c.Image])
+		x = end
 	}
 }
 

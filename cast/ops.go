@@ -231,7 +231,7 @@ type TypingOptions struct {
 	Seed   uint64  `json:"seed"`   // random seed, for reproducible results
 }
 
-var ansiRe = regexp.MustCompile(`\x1b(\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(\x07|\x1b\\)|[@-Z\\-_])`)
+var ansiRe = regexp.MustCompile(`\x1b(\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(\x07|\x1b\\)|[PX^_][^\x1b]*\x1b\\|[@-Z\\-_])`)
 
 // StripANSI removes terminal escape sequences.
 func StripANSI(s string) string { return ansiRe.ReplaceAllString(s, "") }
