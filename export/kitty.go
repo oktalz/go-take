@@ -62,8 +62,17 @@ type Placement struct {
 	imageID    uint32
 	id         uint32 // placement id (p)
 	fit        fit
-	stay       bool // leave the cursor where it is (C=1)
+	cursor     cursorMove // where a direct placement leaves the cursor
 }
+
+// cursorMove is where the cursor goes after an image is placed at it.
+type cursorMove uint8
+
+const (
+	cursorRight cursorMove = iota // after the image's last column, on its last row (Kitty, iTerm2)
+	cursorStay                    // where it was (Kitty C=1)
+	cursorBelow                   // the image's first column, on the line below it (Sixel)
+)
 
 // kittyScreen is the terminal that graphics commands act on.
 type kittyScreen interface {
@@ -327,7 +336,10 @@ func (k *kitty) put(c kittyCmd, id uint32, scr kittyScreen) {
 	}
 	p := &Placement{
 		Image: img, Cols: c.num('c'), Rows: c.num('r'),
-		imageID: id, id: c.id('p'), z: c.num('z'), stay: c.num('C') == 1,
+		imageID: id, id: c.id('p'), z: c.num('z'),
+	}
+	if c.num('C') == 1 {
+		p.cursor = cursorStay
 	}
 	w, h := src.Dx(), src.Dy()
 	switch {
@@ -349,6 +361,11 @@ func (k *kitty) put(c kittyCmd, id uint32, scr kittyScreen) {
 	if c.num('c') == 0 || c.num('r') == 0 {
 		p.fit = fitTop
 	}
+	k.placeDirect(p, scr)
+}
+
+// placeDirect shows p at the cursor, as image cells colored with a new id.
+func (k *kitty) placeDirect(p *Placement, scr kittyScreen) {
 	color := k.nextDir
 	k.nextDir--
 	k.direct[color] = p

@@ -309,6 +309,7 @@
   // ---------------------------------------------------------------- kitty graphics
 
   // Kitty graphics protocol: https://sw.kovidgoyal.net/kitty/graphics-protocol/
+  // (and Sixel and iTerm2 inline images, shown the same way as Kitty's direct placements)
   //
   // Images come in APC sequences (ESC _ G keys ; base64 ESC \) and are shown at
   // the cursor (direct placement) or through Unicode placeholders: U+10EEEE plus
@@ -410,6 +411,7 @@
     this.onChange = onChange;
     this.seq = 0; // numbers commands run from the OSC handler; never reset
     this.cell = ASSUMED_CELL; // cell size in pixels, for images placed without a size in cells
+    this.termSize = function () { return [80, 24]; }; // columns and rows, set by the player
     this.reset();
   }
 
@@ -440,26 +442,98 @@
     this.pending = '';
     var out = '';
     for (;;) {
-      var i = s.indexOf('\x1b_G');
-      if (i < 0) break;
-      out += this.text(s.slice(0, i));
-      s = s.slice(i);
-      var end = s.indexOf('\x1b', 3);
-      if (end < 0 || end === s.length - 1) { // not ended yet
-        if (s.length <= MAX_PENDING) this.pending = s;
-        return out;
+      var next = nextGraphics(s);
+      if (!next) break;
+      out += this.text(s.slice(0, next.at));
+      s = s.slice(next.at);
+      if (next.kind === 'sixel') {
+        var m = /^\x1bP([0-9;]*)(.?)/.exec(s);
+        if (!m[2]) { this.hold(s); return out; } // not known yet
+        if (m[2] !== 'q') { out += this.text(s.slice(0, 2)); s = s.slice(2); continue; } // another DCS
       }
-      if (s[end + 1] === '\\') {
-        out += this.command(s.slice(3, end));
-        end += 2;
+      var intro = GFX_INTROS[next.kind], end = -1, len = 0;
+      for (var i = intro.length; i < s.length; i++) {
+        var ch = s[i];
+        if (ch === '\x07' && next.kind === 'iterm') { end = i; len = i + 1; break; }
+        if (ch !== '\x1b') continue;
+        if (i + 1 < s.length) { end = s[i + 1] === '\\' ? i : -2; len = s[i + 1] === '\\' ? i + 2 : i; }
+        break;
       }
-      s = s.slice(end); // a command cut short by another escape is dropped
+      if (!len) { this.hold(s); return out; } // not ended yet
+      if (end >= 0) out += this.graphics(next.kind, s.slice(intro.length, end));
+      s = s.slice(len); // a command cut short by another escape is dropped
     }
-    var hold = /\x1b_?$/.exec(s);
-    if (hold) s = s.slice(0, hold.index);
-    out += this.text(s);
-    if (hold) this.pending = hold[0];
+    var n = heldBack(s);
+    out += this.text(s.slice(0, s.length - n));
+    this.pending = s.slice(s.length - n);
     return out;
+  };
+
+  Kitty.prototype.hold = function (s) {
+    if (s.length <= MAX_PENDING) this.pending = s;
+  };
+
+  Kitty.prototype.graphics = function (kind, body) {
+    if (kind === 'kitty') return this.command(body);
+    if (kind === 'sixel') return this.sixel(body.slice(body.indexOf('q') + 1));
+    return this.iterm(body);
+  };
+
+  // sixel shows a Sixel image at the cursor; the cursor goes below it.
+  Kitty.prototype.sixel = function (data) {
+    var px = decodeSixel(data);
+    if (!px) return '';
+    var img = { w: px.w, h: px.h, src: null }, onChange = this.onChange;
+    createImageBitmap(new ImageData(px.rgba, px.w, px.h)).then(function (bmp) { img.src = bmp; onChange(); });
+    return this.placeDirect({
+      img: img, x: 0, y: 0, w: 0, h: 0, cols: Math.ceil(px.w / this.cell[0]), rows: Math.ceil(px.h / this.cell[1]),
+      fit: 'top', cursor: 'below'
+    });
+  };
+
+  // iterm shows an iTerm2 inline image (OSC 1337 File=) at the cursor.
+  Kitty.prototype.iterm = function (body) {
+    var colon = body.indexOf(':');
+    if (colon < 0) return '';
+    var args = {};
+    body.slice(0, colon).split(';').forEach(function (kv) {
+      var eq = kv.indexOf('=');
+      if (eq > 0) args[kv.slice(0, eq)] = kv.slice(eq + 1);
+    });
+    if (args.inline !== '1') return ''; // a file download
+    var bytes;
+    try { bytes = base64Bytes(body.slice(colon + 1)); } catch (e) { return ''; }
+    var dims = imageSize(bytes);
+    if (!dims) return '';
+    var w = dims[0], h = dims[1], cell = this.cell, ts = this.termSize();
+    var size = function (v, total, c, own) {
+      if (!v || v === 'auto') return [own, false];
+      if (/px$/.test(v)) return [parseInt(v, 10) || 0, true];
+      if (/%$/.test(v)) return [Math.floor(total * c * (parseInt(v, 10) || 0) / 100), true];
+      return [(parseInt(v, 10) || 0) * c, true];
+    };
+    var pw = size(args.width, ts[0], cell[0], w), ph = size(args.height, ts[1], cell[1], h);
+    var keep = args.preserveAspectRatio !== '0';
+    if (keep && pw[1] && !ph[1]) ph[0] = Math.floor(pw[0] * h / Math.max(w, 1));
+    else if (keep && ph[1] && !pw[1]) pw[0] = Math.floor(ph[0] * w / Math.max(h, 1));
+    if (pw[0] <= 0 || ph[0] <= 0) return '';
+    var img = { w: w, h: h, src: null }, onChange = this.onChange;
+    createImageBitmap(new Blob([bytes])).then(function (bmp) { img.src = bmp; onChange(); }).catch(function () {});
+    return this.placeDirect({
+      img: img, x: 0, y: 0, w: 0, h: 0, cols: Math.min(Math.ceil(pw[0] / cell[0]), ts[0]),
+      rows: Math.ceil(ph[0] / cell[1]), fit: keep ? 'top' : 'stretch', cursor: 'right'
+    });
+  };
+
+  // placeDirect shows placement p at the cursor, as image cells colored with a new id.
+  Kitty.prototype.placeDirect = function (p) {
+    p.cols = Math.min(Math.max(p.cols, 1), IMAGE_CELL_MAX + 1);
+    p.rows = Math.min(Math.max(p.rows, 1), IMAGE_CELL_MAX + 1);
+    this.used = true;
+    this.onChange();
+    var color = this.nextDir--;
+    this.direct[color] = p;
+    return directCells(color, p);
   };
 
   // text rewrites Unicode placeholders to image cells.
@@ -581,16 +655,19 @@
       return '';
     }
     if (!knum(c, 'c') || !knum(c, 'r')) p.fit = 'top';
+    p.cursor = knum(c, 'C') === 1 ? 'stay' : 'right';
     var color = this.nextDir--;
     this.direct[color] = p;
-    return directCells(color, p, knum(c, 'C') === 1);
+    return directCells(color, p);
   };
 
   // directCells returns the text that draws a direct placement's cells at the
   // cursor: first room is made (scrolling at the bottom), then each row is
   // written from the saved top left corner with autowrap off, so the image is
-  // cut at the right edge. The cursor ends after the image, as in Kitty.
-  function directCells(color, p, stay) {
+  // cut at the right edge. The cursor ends after the image's last column on its
+  // last row (p.cursor 'right': Kitty, iTerm2), stays ('stay': Kitty C=1), or goes
+  // to the line below it ('below': Sixel).
+  function directCells(color, p) {
     var sgr = '\x1b[0;38;2;' + (color >> 16 & 255) + ';' + (color >> 8 & 255) + ';' + (color & 255) + 'm';
     var out = '';
     if (p.rows > 1) out += '\x1bD'.repeat(p.rows - 1) + '\x1b[' + (p.rows - 1) + 'A';
@@ -600,8 +677,119 @@
       for (var c = 0; c < p.cols; c++) out += imageCell(r, c);
     }
     out += '\x1b[?7h\x1b8';
-    if (!stay) out += (p.rows > 1 ? '\x1b[' + (p.rows - 1) + 'B' : '') + '\x1b[' + p.cols + 'C';
+    var down = p.rows > 1 ? '\x1b[' + (p.rows - 1) + 'B' : '';
+    if (p.cursor === 'right') out += down + '\x1b[' + p.cols + 'C';
+    else if (p.cursor === 'below') out += down + '\x1bD';
     return out;
+  }
+
+  var GFX_INTROS = { kitty: '\x1b_G', sixel: '\x1bP', iterm: '\x1b]1337;File=' };
+
+  // nextGraphics returns where the next graphics command starts and its kind, or null.
+  function nextGraphics(s) {
+    var best = null;
+    Object.keys(GFX_INTROS).forEach(function (kind) {
+      var i = s.indexOf(GFX_INTROS[kind]);
+      if (i >= 0 && (!best || i < best.at)) best = { at: i, kind: kind };
+    });
+    return best;
+  }
+
+  // heldBack returns how many characters at the end of s may start a graphics command.
+  function heldBack(s) {
+    var intros = Object.keys(GFX_INTROS).map(function (k) { return GFX_INTROS[k]; });
+    for (var n = Math.min(s.length, GFX_INTROS.iterm.length - 1); n > 0; n--) {
+      var tail = s.slice(s.length - n);
+      if (intros.some(function (intro) { return intro.indexOf(tail) === 0; })) return n;
+    }
+    return 0;
+  }
+
+  // imageSize reads the size of a PNG, GIF or JPEG from its header, or null.
+  function imageSize(b) {
+    if (b[0] === 0x89 && b[1] === 0x50) { var s = pngSize(b); return s[0] ? s : null; }
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return [b[6] | b[7] << 8, b[8] | b[9] << 8];
+    if (b[0] !== 0xff || b[1] !== 0xd8) return null;
+    for (var i = 2; i + 9 < b.length;) { // JPEG: find a start of frame marker
+      if (b[i] !== 0xff) return null;
+      var marker = b[i + 1], len = b[i + 2] << 8 | b[i + 3];
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return [b[i + 7] << 8 | b[i + 8], b[i + 5] << 8 | b[i + 6]];
+      }
+      i += 2 + len;
+    }
+    return null;
+  }
+
+  var VT340 = [[0, 0, 0], [51, 51, 204], [204, 33, 33], [51, 204, 51], [204, 51, 204], [51, 204, 204], [204, 204, 51],
+    [120, 120, 120], [69, 69, 69], [87, 87, 153], [153, 69, 69], [87, 153, 87], [153, 87, 153], [87, 153, 153],
+    [153, 153, 87], [204, 204, 204]];
+  var MAX_SIXEL = 8192;
+
+  // sixelColor converts a color definition: Pu 2 is RGB in percent, 1 is HLS (hue 0 is blue).
+  function sixelColor(pu, px, py, pz) {
+    var pct = function (v) { return Math.floor(Math.min(Math.max(v, 0), 100) * 255 / 100); };
+    if (pu === 2) return [pct(px), pct(py), pct(pz)];
+    var h = ((px + 240) % 360) / 360, l = py / 100, s = pz / 100;
+    var q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+    var hue = function (t) {
+      t -= Math.floor(t);
+      return t < 1 / 6 ? p + (q - p) * 6 * t : t < 0.5 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p;
+    };
+    var to8 = function (v) { return Math.round(Math.min(Math.max(v, 0), 1) * 255); };
+    return [to8(hue(h + 1 / 3)), to8(hue(h)), to8(hue(h - 1 / 3))];
+  }
+
+  // decodeSixel decodes Sixel data (after the q) to {w, h, rgba}, or null.
+  // Pixels it does not set stay transparent. As export/inline.go does.
+  function decodeSixel(data) {
+    var palette = VT340.slice(), rows = [], x = 0, y = 0, cur = 0, declW = 0, declH = 0, maxW = 0, i = 0;
+    var set = function (x, y, c) {
+      if (x >= MAX_SIXEL || y >= MAX_SIXEL) return;
+      while (rows.length <= y) rows.push([]);
+      rows[y][x] = c;
+      if (x + 1 > maxW) maxW = x + 1;
+    };
+    var sixel = function (bits) {
+      for (var b = 0; b < 6; b++) if (bits & (1 << b)) set(x, y + b, palette[cur] || [0, 0, 0]);
+    };
+    var params = function () {
+      var ps = [], m = /^[0-9;]*/.exec(data.slice(i))[0];
+      i += m.length;
+      if (m) m.split(';').forEach(function (v) { ps.push(Math.min(parseInt(v, 10) || 0, 1 << 20)); });
+      return ps;
+    };
+    while (i < data.length) {
+      var c = data[i++], code = c.charCodeAt(0), ps;
+      if (c === '"') {
+        ps = params();
+        if (ps.length >= 4) { declW = Math.min(ps[2], MAX_SIXEL); declH = Math.min(ps[3], MAX_SIXEL); }
+      } else if (c === '#') {
+        ps = params();
+        if (!ps.length || ps[0] > 255) continue;
+        cur = ps[0];
+        if (ps.length >= 5) palette[cur] = sixelColor(ps[1], ps[2], ps[3], ps[4]);
+      } else if (c === '!') {
+        ps = params();
+        var rc = i < data.length ? data.charCodeAt(i) : 0;
+        if (ps.length && rc >= 63 && rc <= 126) {
+          i++;
+          for (var k = 0; k < Math.min(ps[0], MAX_SIXEL); k++) { sixel(rc - 63); x++; }
+        }
+      } else if (c === '$') x = 0;
+      else if (c === '-') { x = 0; y += 6; } else if (code >= 63 && code <= 126) { sixel(code - 63); x++; }
+    }
+    var w = Math.max(maxW, declW), h = Math.max(rows.length, declH);
+    if (!w || !h) return null;
+    var rgba = new Uint8ClampedArray(w * h * 4);
+    rows.forEach(function (row, ry) {
+      row.forEach(function (col, rx) {
+        if (!col) return;
+        var o = (ry * w + rx) * 4;
+        rgba[o] = col[0]; rgba[o + 1] = col[1]; rgba[o + 2] = col[2]; rgba[o + 3] = 255;
+      });
+    });
+    return { w: w, h: h, rgba: rgba };
   }
 
   // delete removes placements (lowercase d) and also the image data (uppercase d).
@@ -878,6 +1066,7 @@
     this._unscaleMouse();
     this._kittyCache = this._kittyCache || new Map();
     this.kitty = new Kitty(this._kittyCache, function () { self._kittyRedraw(); });
+    this.kitty.termSize = function () { return [self.term.cols, self.term.rows]; };
     this.term.parser.registerOscHandler(KITTY_OSC, function (seq) {
       self.kitty.runDeferred(+seq, self.term);
       return true;

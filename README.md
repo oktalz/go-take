@@ -208,6 +208,11 @@ full color and encoded by [ffmpeg](https://ffmpeg.org), which must be in `PATH`;
 for long sessions and are what chat and social apps take. A section exported with `-from` starts on the same screen
 it had in the full recording.
 
+Images that programs draw in the terminal are kept: the Kitty graphics protocol (direct placements and Unicode
+placeholders, as Bubble Tea apps use), Sixel and iTerm2 inline images. Exports and the web player draw them; text
+around them, East Asian wide characters and emoji keep their columns, and redraws a program wraps in a synchronized
+update never show half done.
+
 ### Fonts in GIF and PNG
 
 - Box drawing (`┌─┐ ╭─╮ ═╬═ ┏━┓`), block elements (`▁▂▃█ ▏▌ ░▒▓`), braille (`⣿⠋`, btop graphs, spinners) and powerline

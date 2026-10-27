@@ -179,40 +179,50 @@ func (t *term) apply(e cast.Event) {
 	}
 }
 
-// write feeds output to the emulator, taking out Kitty graphics commands.
-// Escape sequences split across events are held back until complete.
+// write feeds output to the emulator, taking out graphics commands (Kitty,
+// Sixel, iTerm2). Escape sequences split across events are held back until complete.
 func (t *term) write(s string) {
 	s = t.pending + s
 	t.pending = ""
 	for {
-		i := strings.Index(s, kittyAPC)
+		i, kind := nextGraphics(s)
 		if i < 0 {
 			break
 		}
 		t.text(s[:i])
 		s = s[i:]
-		end := strings.IndexByte(s[len(kittyAPC):], 0x1b)
-		if end < 0 || len(kittyAPC)+end+1 == len(s) { // not ended yet
-			if len(s) <= maxPending {
-				t.pending = s
+		if kind == gfxSixel {
+			sixel, known := sixelStart(s)
+			if !known {
+				t.hold(s)
+				return
 			}
+			if !sixel { // another DCS: the emulator gets it
+				t.text(s[:2])
+				s = s[2:]
+				continue
+			}
+		}
+		body, n, complete := graphicsEnd(s, kind)
+		if !complete {
+			t.hold(s)
 			return
 		}
-		end += len(kittyAPC)
-		if strings.HasPrefix(s[end:], st) {
-			t.graphics(s[len(kittyAPC):end])
-			end += len(st)
+		if body != "" { // empty when cut short
+			t.graphics(kind, body)
 		}
-		s = s[end:] // a command cut short by another escape is dropped
+		s = s[n:] // a command cut short by another escape is dropped
 	}
-	switch {
-	case strings.HasSuffix(s, "\x1b"):
-		s, t.pending = s[:len(s)-1], "\x1b"
-	case strings.HasSuffix(s, "\x1b_"):
-		s, t.pending = s[:len(s)-2], "\x1b_"
-	default:
+	n := heldBack(s)
+	t.text(s[:len(s)-n])
+	t.pending = s[len(s)-n:]
+}
+
+// hold keeps an unfinished graphics command for the next output, up to maxPending.
+func (t *term) hold(s string) {
+	if len(s) <= maxPending {
+		t.pending = s
 	}
-	t.text(s)
 }
 
 // text feeds output without graphics commands to the emulator, fixing up full resets.
@@ -233,7 +243,18 @@ func (t *term) text(s string) {
 	_, _ = t.vt.Write([]byte(s))
 }
 
-func (t *term) graphics(cmd string) { t.kitty.command(cmd, t) }
+func (t *term) graphics(kind int, body string) {
+	switch kind {
+	case gfxKitty:
+		t.kitty.command(body, t)
+	case gfxSixel:
+		t.kitty.sixel(body, t)
+	case gfxITerm:
+		cols, rows := t.vt.Size()
+		t.kitty.iterm(body, t, cols, rows)
+	default:
+	}
+}
 
 func (t *term) imageAt(x, y int) (uint32, bool) {
 	g := t.vt.Cell(x, y)
@@ -268,10 +289,17 @@ func (t *term) place(id uint32, p *Placement) {
 	end := t.vt.Cursor()
 	scrolled := max(cur.Y+h-1-(rows-1), 0)
 	x, y := cur.X, max(cur.Y-scrolled, 0)
-	if !p.stay { // Kitty leaves the cursor after the image's last column, on its last row
+	switch p.cursor {
+	case cursorRight:
 		x, y = min(cur.X+p.Cols, cols-1), end.Y
+	case cursorBelow:
+		y = end.Y
+	default:
 	}
 	_, _ = fmt.Fprintf(t.vt, "\x1b8\x1b[%d;%dH", y+1, x+1)
+	if p.cursor == cursorBelow { // next line, scrolling at the bottom
+		_, _ = t.vt.Write([]byte("\x1bD"))
+	}
 }
 
 func (t *term) snapshot() *Screen {
