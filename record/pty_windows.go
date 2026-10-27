@@ -64,7 +64,10 @@ func EnableVT() func() {
 	}
 }
 
-func startPTY(command, shell string, env []string, cols, rows int) (session, error) {
+// cellPixels reports no cell size: the Windows console does not tell it.
+func cellPixels() cellSize { return cellSize{} }
+
+func startPTY(command, shell string, env []string, cols, rows int, _ cellSize) (session, error) {
 	inR, inW, err := os.Pipe()
 	if err != nil {
 		return nil, err

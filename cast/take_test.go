@@ -173,3 +173,22 @@ func TestSaveFormatFromExtension(t *testing.T) {
 		sameEvents(t, c.Events, c2.Events)
 	}
 }
+
+func TestTakeCellSize(t *testing.T) {
+	c := New(80, 24)
+	c.Header.Term.CellWidth, c.Header.Term.CellHeight = 9, 18
+	var buf bytes.Buffer
+	if err := c.Write(&buf, FormatTake); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "\ncell 9x18\n") {
+		t.Fatalf("no cell line:\n%s", buf.String())
+	}
+	back, err := Read(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Header.Term.CellWidth != 9 || back.Header.Term.CellHeight != 18 {
+		t.Fatalf("cell size = %dx%d", back.Header.Term.CellWidth, back.Header.Term.CellHeight)
+	}
+}

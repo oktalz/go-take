@@ -47,6 +47,10 @@ type Term struct { // betteralign:ignore
 	Type    string `json:"type,omitempty"`
 	Version string `json:"version,omitempty"`
 	Theme   *Theme `json:"theme,omitempty"`
+	// CellWidth and CellHeight are the size of a cell in pixels, when the
+	// terminal told (gotake extension). Images are sized by them.
+	CellWidth  int `json:"cell_width,omitempty"`
+	CellHeight int `json:"cell_height,omitempty"`
 }
 
 // Header is the first line of a recording.

@@ -163,3 +163,14 @@ func TestKittyTranscript(t *testing.T) {
 		t.Fatalf("transcript = %q", got)
 	}
 }
+
+func TestKittyCellSizeFromHeader(t *testing.T) {
+	// 40x40 pixels without a size in cells: 5x5 cells of 8x16 pixels would
+	// be 5x3, but the recording says cells are 10x20
+	c := kittyCast(apc("a=T,f=32,s=40,v=40", solid(40, 40, red)))
+	c.Header.Term.CellWidth, c.Header.Term.CellHeight = 10, 20
+	s := ScreenAt(c, -1, Options{})
+	if p := s.At(0, 0).Image; p == nil || p.Cols != 4 || p.Rows != 2 {
+		t.Fatalf("placement = %+v, want 4x2 cells", p)
+	}
+}

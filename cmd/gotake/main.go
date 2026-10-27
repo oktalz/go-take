@@ -343,6 +343,9 @@ func cmdInfo(args []string) error {
 		printf("title:      %s\n", h.Title)
 	}
 	printf("terminal:   %dx%d %s\n", h.Term.Cols, h.Term.Rows, h.Term.Type)
+	if h.Term.CellWidth > 0 {
+		printf("cell size:  %dx%d px\n", h.Term.CellWidth, h.Term.CellHeight)
+	}
 	printf("duration:   %s\n", fmtTime(c.Duration()))
 	printf("events:     %d (output %d, input %d, markers %d, resize %d)\n",
 		len(c.Events), counts[cast.Output], counts[cast.Input], counts[cast.Marker], counts[cast.Resize])

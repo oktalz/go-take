@@ -191,6 +191,11 @@
             if (a[1]) header.term.type = a[1];
             break;
           case 'theme': header.term.theme = { fg: a[0], bg: a[1], palette: a[2] }; break;
+          case 'cell':
+            var cell = /^(\d+)x(\d+)$/.exec(a[0] || '');
+            if (!cell) throw new Error('bad cell size');
+            header.term.cell_width = +cell[1]; header.term.cell_height = +cell[2];
+            break;
           case 'title': header.title = a[0]; break;
           case 'command': header.command = a[0]; break;
           case 'timestamp': header.timestamp = +a[0]; break;
@@ -292,7 +297,7 @@
   var KITTY_PLACEHOLDER = 0x10EEEE;
   var IMAGE_CELL = 0x100000;      // image cell: IMAGE_CELL + row * 256 + col
   var IMAGE_CELL_MAX = 254;       // largest row and column an image cell holds
-  var ASSUMED_CELL = [8, 16];     // cell size in pixels when a placement gives no size
+  var ASSUMED_CELL = [8, 16];     // cell size in pixels when the recording does not say
   var DIRECT_IDS = 0xffffff;      // colors of direct placements count down from here
   var NUMBERED_IDS = 0x80000000;  // ids of images sent with a number only
   var KITTY_OSC = 5379;           // private OSC that runs a command where it was in the output
@@ -379,6 +384,7 @@
     this.cache = cache;
     this.onChange = onChange;
     this.seq = 0; // numbers commands run from the OSC handler; never reset
+    this.cell = ASSUMED_CELL; // cell size in pixels, for images placed without a size in cells
     this.reset();
   }
 
@@ -532,11 +538,12 @@
     };
     var w = p.w || img.w - p.x, h = p.h || img.h - p.y;
     if (w > 0 && h > 0) {
-      if (p.cols && !p.rows) p.rows = Math.ceil(p.cols * ASSUMED_CELL[0] * h / (w * ASSUMED_CELL[1]));
-      else if (p.rows && !p.cols) p.cols = Math.ceil(p.rows * ASSUMED_CELL[1] * w / (h * ASSUMED_CELL[0]));
+      var cw = this.cell[0], ch = this.cell[1];
+      if (p.cols && !p.rows) p.rows = Math.ceil(p.cols * cw * h / (w * ch));
+      else if (p.rows && !p.cols) p.cols = Math.ceil(p.rows * ch * w / (h * cw));
       else if (!p.cols && !p.rows) {
-        p.cols = Math.ceil(w / ASSUMED_CELL[0]);
-        p.rows = Math.ceil(h / ASSUMED_CELL[1]);
+        p.cols = Math.ceil(w / cw);
+        p.rows = Math.ceil(h / ch);
       }
     }
     p.cols = Math.min(Math.max(p.cols, 1), IMAGE_CELL_MAX + 1);
@@ -960,6 +967,7 @@
     var term = h.term || {};
     this.cols = term.cols || 80;
     this.rows = term.rows || 24;
+    this.kitty.cell = term.cell_width > 0 && term.cell_height > 0 ? [term.cell_width, term.cell_height] : ASSUMED_CELL;
     var idle = o.idleTimeLimit != null ? o.idleTimeLimit : (h.idle_time_limit || 0);
     var t = 0, evs = [], markers = [];
     cast.events.forEach(function (e) {

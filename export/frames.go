@@ -133,8 +133,9 @@ type term struct {
 	vt      vt10x.Terminal
 	kitty   *kitty
 	pending string // output held back until the escape sequence it starts is complete
-	synced  bool   // inside a synchronized update (mode 2026): the screen is half drawn
+	cell    [2]int // cell size in pixels from the header
 	theme   Theme
+	synced  bool // inside a synchronized update (mode 2026): the screen is half drawn
 }
 
 // A full reset (RIS, printed by the reset command) should clear the screen, but
@@ -157,7 +158,8 @@ const (
 
 func newTerm(c *cast.Cast, theme Theme) *term {
 	cols, rows := max(c.Header.Term.Cols, 1), max(c.Header.Term.Rows, 1)
-	return &term{vt: vt10x.New(vt10x.WithSize(cols, rows)), kitty: newKitty(), theme: theme}
+	cell := [2]int{c.Header.Term.CellWidth, c.Header.Term.CellHeight}
+	return &term{vt: vt10x.New(vt10x.WithSize(cols, rows)), kitty: newKitty(cell[0], cell[1]), cell: cell, theme: theme}
 }
 
 func (t *term) apply(e cast.Event) {
@@ -221,7 +223,7 @@ func (t *term) text(s string) {
 			break
 		}
 		_, _ = t.vt.Write([]byte(s[:i+len(ris)] + clearScreen))
-		t.kitty = newKitty()
+		t.kitty = newKitty(t.cell[0], t.cell[1])
 		s = s[i+len(ris):]
 	}
 	_, _ = t.vt.Write([]byte(s))

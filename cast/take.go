@@ -112,6 +112,9 @@ func (e *takeEncoder) WriteHeader(h Header) error {
 	} else {
 		e.line("term", size)
 	}
+	if h.Term.CellWidth > 0 && h.Term.CellHeight > 0 {
+		e.line("cell", strconv.Itoa(h.Term.CellWidth)+"x"+strconv.Itoa(h.Term.CellHeight))
+	}
 	if h.Term.Version != "" {
 		e.line("term-version", quoteTake(h.Term.Version))
 	}
@@ -381,6 +384,13 @@ func (c *Cast) headerLine(word string, args []string) (bool, error) {
 		}
 		if len(args) > 1 {
 			h.Term.Type = args[1]
+		}
+	case "cell":
+		if err := wantArgs(args, 1, 1); err != nil {
+			return true, err
+		}
+		if _, err := fmt.Sscanf(args[0], "%dx%d", &h.Term.CellWidth, &h.Term.CellHeight); err != nil {
+			return true, fmt.Errorf("cell size %q, want WIDTHxHEIGHT in pixels", args[0])
 		}
 	case "term-version":
 		return true, setString(&h.Term.Version, args)

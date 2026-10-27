@@ -17,6 +17,9 @@ import (
 	"github.com/oktalz/go-take/cast"
 )
 
+// cellSize is the size of a terminal cell in pixels (zero when unknown).
+type cellSize struct{ w, h int }
+
 type session interface {
 	io.ReadWriteCloser
 	resize(cols, rows int) error
@@ -45,12 +48,13 @@ func Record(out io.Writer, opts Options) error {
 	stdinFd := int(os.Stdin.Fd())
 	isTTY := term.IsTerminal(stdinFd)
 	cols, rows := termSize(opts.Cols, opts.Rows)
+	cell := cellPixels()
 	termType := cmp.Or(os.Getenv("TERM"), "xterm-256color")
 
 	enc := cast.NewEncoder(out, opts.Format)
 	err := enc.WriteHeader(cast.Header{
 		Version:       3,
-		Term:          cast.Term{Cols: cols, Rows: rows, Type: termType},
+		Term:          cast.Term{Cols: cols, Rows: rows, Type: termType, CellWidth: cell.w, CellHeight: cell.h},
 		Timestamp:     time.Now().Unix(),
 		IdleTimeLimit: opts.IdleTimeLimit,
 		Command:       command,
@@ -67,7 +71,7 @@ func Record(out io.Writer, opts Options) error {
 	env := append(os.Environ(), "GOTAKE_RECORDING=1", "TERM="+termType)
 	env = append(env, opts.Env...)
 
-	ptmx, err := startPTY(opts.Command, shell, env, cols, rows)
+	ptmx, err := startPTY(opts.Command, shell, env, cols, rows, cell)
 	if err != nil {
 		return err
 	}

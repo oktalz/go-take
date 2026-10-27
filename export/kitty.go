@@ -28,8 +28,7 @@ const (
 	kittyPlaceholder = '\U0010EEEE'
 	imageCellBase    = 0x100000 // image cell rune: base + row<<8 + col
 	imageCellMax     = 254      // largest row and column an image cell can hold
-	// Image size in cells when a placement does not give one: Kitty uses its own
-	// cell size in pixels, which the recording does not know.
+	// Cell size in pixels for sizing images, when the recording does not say.
 	assumedCellW, assumedCellH = 8, 16
 	maxImagePixels             = 64 << 20
 	directIDs                  = 0xffffff // direct placement ids count down from here
@@ -132,15 +131,20 @@ type kitty struct {
 	data    strings.Builder       // its base64 payload so far
 	nextDir uint32
 	nextNum uint32
+	cellW   int // cell size in pixels, for images placed without a size in cells
+	cellH   int
 	row     int // last placeholder piece, for marks left out
 	col     int
 }
 
-func newKitty() *kitty {
+func newKitty(cellW, cellH int) *kitty {
+	if cellW <= 0 || cellH <= 0 {
+		cellW, cellH = assumedCellW, assumedCellH
+	}
 	return &kitty{
 		images: map[uint32]*image.NRGBA{}, numbers: map[uint32]uint32{},
 		virtual: map[uint32]*Placement{}, direct: map[uint32]*Placement{},
-		nextDir: directIDs, nextNum: numberedIDs, row: -1,
+		nextDir: directIDs, nextNum: numberedIDs, row: -1, cellW: cellW, cellH: cellH,
 	}
 }
 
@@ -329,11 +333,11 @@ func (k *kitty) put(c kittyCmd, id uint32, scr kittyScreen) {
 	switch {
 	case p.Cols > 0 && p.Rows > 0:
 	case p.Cols > 0:
-		p.Rows = ceilDiv(p.Cols*assumedCellW*h, w*assumedCellH)
+		p.Rows = ceilDiv(p.Cols*k.cellW*h, w*k.cellH)
 	case p.Rows > 0:
-		p.Cols = ceilDiv(p.Rows*assumedCellH*w, h*assumedCellW)
+		p.Cols = ceilDiv(p.Rows*k.cellH*w, h*k.cellW)
 	default:
-		p.Cols, p.Rows = ceilDiv(w, assumedCellW), ceilDiv(h, assumedCellH)
+		p.Cols, p.Rows = ceilDiv(w, k.cellW), ceilDiv(h, k.cellH)
 	}
 	p.Cols, p.Rows = min(max(p.Cols, 1), imageCellMax+1), min(max(p.Rows, 1), imageCellMax+1)
 
