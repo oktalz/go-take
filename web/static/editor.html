@@ -60,11 +60,13 @@
         <label><input id="in-find-case" type="checkbox"> ignore case</label>
         <label title="Go regexp syntax; use $1 in the replacement"><input id="in-find-regex" type="checkbox"> regex</label>
         <label><input id="in-find-sel" type="checkbox"> only in selection</label>
+        <label title="Replace each match with * (one per character), so the layout stays. With a (?P&lt;secret&gt;...) group, only that part is masked."><input id="in-find-mask" type="checkbox"> mask</label>
       </div>
       <div class="find-bar">
         <span id="find-count" class="muted">—</span>
         <button id="btn-find-prev" class="small" title="Previous match (Shift+Enter)">▲</button>
         <button id="btn-find-next" class="small" title="Next match (Enter)">▼</button>
+        <button id="btn-find-secrets" class="small" title="Find common tokens, keys and password=... values, to mask them">Find secrets</button>
         <button data-op="replace" class="primary-soft">Replace all</button>
       </div>
       <p class="note">Searches output events. With color codes ignored, window titles (hidden escape sequences) are left alone; untick to change them too.</p>

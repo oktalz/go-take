@@ -179,6 +179,9 @@ func (p *winPTY) Close() error {
 	return errors.Join(p.inW.Close(), p.outR.Close())
 }
 
+// echoOff is always false: the pseudo console does not tell.
+func (*winPTY) echoOff() bool { return false }
+
 func (p *winPTY) resize(cols, rows int) error {
 	return windows.ResizePseudoConsole(p.hpc, windows.Coord{X: int16(cols), Y: int16(rows)})
 }

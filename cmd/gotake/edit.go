@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"flag"
 	"os"
@@ -59,6 +60,7 @@ type editFlags struct {
 	output     string
 	outputFile string
 	after      string
+	pattern    string
 	from, to   timeFlag
 	at         timeFlag
 	factor     float64
@@ -132,6 +134,15 @@ var editCmds = map[string]editCmd{
 		eprintf("replaced %d matches in %d events\n", m, ev)
 		return err
 	}},
+	"redact": {position: "range", run: func(c *cast.Cast, f *editFlags) error {
+		from, to := f.span(c)
+		m, ev, err := c.Replace(from, to, cast.ReplaceOptions{
+			Find: cmp.Or(f.pattern, cast.SecretPattern), Regex: true, Mask: true,
+			IgnoreCase: f.ignoreCase, IgnoreANSI: !f.raw,
+		})
+		eprintf("masked %d matches in %d events\n", m, ev)
+		return err
+	}},
 	"pause": {position: "at", run: func(c *cast.Cast, f *editFlags) error {
 		c.Pause(c.IndexAt(f.at.v), f.seconds)
 		return nil
@@ -200,6 +211,9 @@ func cmdEditOp(name string, args []string) error {
 	fs.StringVar(&f.find, "find", "", "text (or -regex) to find in output")
 	fs.StringVar(&f.replace, "replace", "", "replacement text ($1 with -regex)")
 	fs.BoolVar(&f.regex, "regex", false, "-find is a regular expression")
+	fs.StringVar(&f.pattern, "pattern", "",
+		"redact: regular expression to mask; (?P<secret>...) masks only that part "+
+			"(default: common tokens and passwords)")
 	fs.BoolVar(&f.ignoreCase, "ignore-case", false, "case-insensitive -find")
 	fs.BoolVar(&f.raw, "raw", false, "match raw data including escape sequences (default: visible text only)")
 	fs.StringVar(&f.after, "after", "", "text printed after the output (e.g. next prompt)")

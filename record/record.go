@@ -24,6 +24,8 @@ type session interface {
 	io.ReadWriteCloser
 	resize(cols, rows int) error
 	wait() int
+	// echoOff reports whether the program turned off echo, as for a password.
+	echoOff() bool
 }
 
 // Options configures a recording.
@@ -33,7 +35,7 @@ type Options struct {
 	Env           []string
 	IdleTimeLimit float64 // pauses longer than this are shortened while recording (0 = off)
 	Cols, Rows    int     // override terminal size (0 = use current terminal)
-	CaptureInput  bool    // also record keystrokes as "i" events
+	CaptureInput  bool    // also record keystrokes as "i" events (not while echo is off, as for passwords)
 	Format        cast.Format
 }
 
@@ -89,7 +91,11 @@ func Record(out io.Writer, opts Options) error {
 	}
 	var onInput func(string)
 	if opts.CaptureInput {
-		onInput = func(s string) { w.emit(cast.Input, s) }
+		onInput = func(s string) {
+			if !ptmx.echoOff() { // a password: the screen does not show it, so neither does the recording
+				w.emit(cast.Input, s)
+			}
+		}
 	}
 	go copyInput(ptmx, onInput)
 	if err := copyOutput(ptmx, os.Stdout, func(s string) { w.emit(cast.Output, s) }); err != nil {

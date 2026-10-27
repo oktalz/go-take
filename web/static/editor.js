@@ -722,7 +722,8 @@
       replace: unescapeData($('in-replace').value),
       regex: regex,
       ignore_case: $('in-find-case').checked,
-      ignore_ansi: $('in-find-ansi').checked
+      ignore_ansi: $('in-find-ansi').checked,
+      mask: $('in-find-mask').checked
     };
   }
 
@@ -776,6 +777,19 @@
     scrollToSel();
     renderAll();
   }
+
+  $('in-find-mask').addEventListener('change', function () {
+    $('in-replace').disabled = this.checked;
+  });
+  $('btn-find-secrets').onclick = function () {
+    if (!S) return;
+    $('in-find').value = S.secrets;
+    $('in-find-regex').checked = true;
+    $('in-find-mask').checked = true;
+    $('in-find-ansi').checked = true;
+    $('in-replace').disabled = true;
+    runFind();
+  };
 
   ['in-find', 'in-find-regex', 'in-find-case', 'in-find-ansi', 'in-find-sel'].forEach(function (id) {
     $(id).addEventListener(id === 'in-find' ? 'input' : 'change', scheduleFind);

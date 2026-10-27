@@ -63,6 +63,11 @@ func (p *unixPTY) Read(b []byte) (int, error)  { return p.ptmx.Read(b) }
 func (p *unixPTY) Write(b []byte) (int, error) { return p.ptmx.Write(b) }
 func (p *unixPTY) Close() error                { return p.ptmx.Close() }
 
+func (p *unixPTY) echoOff() bool {
+	t, err := unix.IoctlGetTermios(int(p.ptmx.Fd()), ioctlGetTermios)
+	return err == nil && t.Lflag&unix.ECHO == 0
+}
+
 func (p *unixPTY) resize(cols, rows int) error {
 	return pty.Setsize(p.ptmx, p.cell.winsize(cols, rows))
 }

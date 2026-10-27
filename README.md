@@ -126,6 +126,8 @@ gotake edit demo.take
 - **Find & replace** (Ctrl+F): change text in every output event at once, for example a shell prompt such as
   `zlatko@WSL:~/src/project$`. Matching uses the visible text, so it works even when the shell colors parts of the
   prompt. Matches are counted live as you type, Enter jumps to the next one, and Replace all is one undo step.
+  Tick *mask* to replace matches with `*` instead, keeping the layout; *Find secrets* finds common tokens, keys and
+  `password=...` values to mask.
 - **Insert window** (right-click → Insert, or Ctrl+I): a floating, draggable window opened where you clicked. Its
   tabs insert a typed command with output, raw output, a marker or a pause, before or after the selection. If the
   screen already shows a prompt at that point, the command is typed at it and the same prompt is printed again
@@ -157,11 +159,17 @@ gotake inject  -at 0:30 -cmd "kubectl get pods" -output-file pods.txt demo.take
 gotake pause   -at 0:42 -seconds 2 demo.take
 gotake marker  -at 0:42 -label "deploy" demo.take
 gotake replace -find 'zlatko@WSL' -replace 'demo' demo.take
+gotake redact  demo.take          # mask tokens, keys and password=... values with *
 ```
 
 `replace` matches visible text and keeps color codes. Replacing the user@host and the path separately keeps each
 part's color. Add `-raw` to also match inside escape sequences, such as the window title, and `-regex` for regular
 expressions (`$1` works in `-replace`).
+
+`redact` replaces each character of a match with `*`, so nothing shifts. Without `-pattern` it looks for tokens of
+well-known services (GitHub, GitLab, AWS, Slack, Stripe, Google, `sk-` API keys), JSON web tokens and the value after
+keys such as `password=` or `api_key:`. In your own `-pattern`, a `(?P<secret>...)` group masks only that part.
+While recording with `rec -i`, keystrokes typed with terminal echo off, such as passwords, are not stored.
 
 Each command modifies FILE in place unless you pass `-o OUT`. `-from`, `-to` and `-at` take seconds (`12.5`),
 minutes:seconds (`1:02.5`) or a marker label, for example `gotake cut -from intro -to tests`.

@@ -123,3 +123,26 @@ marker done
 		t.Fatalf("recorded %q with %d markers", text, markers)
 	}
 }
+
+func TestEchoOff(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs a Unix shell")
+	}
+	p, err := startPTY("stty -echo; echo off; sleep 2", "/bin/sh", nil, 80, 24, cellSize{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	buf := make([]byte, 64)
+	var seen strings.Builder
+	for !strings.Contains(seen.String(), "off") {
+		n, err := p.Read(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = seen.Write(buf[:n])
+	}
+	if !p.echoOff() {
+		t.Fatal("echo still on after stty -echo")
+	}
+}

@@ -3,6 +3,7 @@ package cast
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // ReplaceOptions configures Find and Replace.
@@ -15,6 +16,10 @@ type ReplaceOptions struct {
 	// is found even when the shell colors parts of it. Escape sequences inside
 	// a match are kept, the replacement is inserted where the match starts.
 	IgnoreANSI bool `json:"ignore_ansi"`
+	// Mask replaces each match with as many * as it has characters, so the
+	// layout stays (Replace is not used). When Find has a group named
+	// "secret", only that group is masked: (?P<secret>...).
+	Mask bool `json:"mask"`
 }
 
 func (o ReplaceOptions) compile() (*regexp.Regexp, error) {
@@ -121,11 +126,55 @@ func findMatches(text string, re *regexp.Regexp) []match {
 	return ms
 }
 
+// maskSpans returns the parts of matches to mask: their "secret" group
+// (when the pattern has one and it took part) or all of them.
+func maskSpans(ms []match, secret int) []match {
+	spans := make([]match, len(ms))
+	for i, m := range ms {
+		spans[i] = m
+		if secret > 0 && m.sub[2*secret] >= 0 {
+			spans[i].start, spans[i].end = m.sub[2*secret], m.sub[2*secret+1]
+		}
+	}
+	return spans
+}
+
+// maskData writes a * for each visible character of data inside spans
+// (offsets into the visible text), leaving escape sequences where they are.
+func maskData(data string, escapes map[int]int, spans []match) string {
+	var b strings.Builder
+	b.Grow(len(data))
+	si, vi := 0, 0
+	for i := 0; i < len(data); {
+		if end, ok := escapes[i]; ok {
+			_, _ = b.WriteString(data[i:end])
+			i = end
+			continue
+		}
+		for si < len(spans) && vi >= spans[si].end {
+			si++
+		}
+		switch {
+		case si >= len(spans) || vi < spans[si].start:
+			_ = b.WriteByte(data[i])
+		case utf8.RuneStart(data[i]):
+			_ = b.WriteByte('*')
+		default: // the rest of a multi-byte character
+		}
+		vi++
+		i++
+	}
+	return b.String()
+}
+
 func replaceData(data string, re *regexp.Regexp, o ReplaceOptions) (string, int) {
 	text, escapes := o.searchText(data)
 	ms := findMatches(text, re)
 	if len(ms) == 0 {
 		return data, 0
+	}
+	if o.Mask {
+		return maskData(data, escapes, maskSpans(ms, re.SubexpIndex("secret"))), len(ms)
 	}
 	repl := make([]string, len(ms))
 	for i, m := range ms {

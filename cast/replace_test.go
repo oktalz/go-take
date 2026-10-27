@@ -1,6 +1,9 @@
 package cast
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const prompt = "\x1b]0;zlatko@WSL: ~/src/x\x07\x1b[01;32mzlatko@WSL\x1b[00m:\x1b[01;34m~/src/x\x1b[00m$ "
 
@@ -57,5 +60,32 @@ func TestReplaceRegex(t *testing.T) {
 	}
 	if _, _, err := c.Find(0, 1, ReplaceOptions{Find: "(", Regex: true}); err == nil {
 		t.Fatal("expected regex error")
+	}
+}
+
+func TestReplaceMask(t *testing.T) {
+	c := New(80, 24)
+	c.Events = []Event{
+		{Code: Output, Data: "token: \x1b[1mghp_" + strings.Repeat("a", 36) + "\x1b[0m ok\r\n"},
+		{Code: Output, Data: "export API_KEY=hunter2secret; key=AKIAABCDEFGHIJKLMNOP\r\n"},
+		{Code: Output, Data: "nothing to see here\r\n"},
+	}
+	o := ReplaceOptions{Find: SecretPattern, Regex: true, Mask: true, IgnoreANSI: true}
+	m, ev, err := c.Replace(0, len(c.Events), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m != 3 || ev != 2 {
+		t.Fatalf("masked %d matches in %d events", m, ev)
+	}
+	want := []string{
+		"token: \x1b[1m" + strings.Repeat("*", 40) + "\x1b[0m ok\r\n",
+		"export API_KEY=*************; key=********************\r\n",
+		"nothing to see here\r\n",
+	}
+	for i, w := range want {
+		if c.Events[i].Data != w {
+			t.Errorf("event %d = %q, want %q", i, c.Events[i].Data, w)
+		}
 	}
 }

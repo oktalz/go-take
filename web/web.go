@@ -65,10 +65,12 @@ func NewEditor(path string) (*Editor, error) {
 }
 
 type state struct {
-	Path     string       `json:"path"`
-	Message  string       `json:"message,omitempty"`
-	Events   []cast.Event `json:"events"`
+	Path    string `json:"path"`
+	Message string `json:"message,omitempty"`
+	// Secrets is the regular expression of the editor's "Find secrets" button.
+	Secrets  string       `json:"secrets"`
 	Header   cast.Header  `json:"header"`
+	Events   []cast.Event `json:"events"`
 	Version  int          `json:"version"`
 	Duration float64      `json:"duration"`
 	Dirty    bool         `json:"dirty"`
@@ -84,7 +86,7 @@ func (ed *Editor) state(msg string) state {
 	return state{
 		Path: ed.path, Header: ed.cast.Header, Events: ev, Version: ed.version,
 		Dirty: ed.version != ed.saved, CanUndo: len(ed.undo) > 0, CanRedo: len(ed.redo) > 0,
-		Duration: ed.cast.Duration(), Message: msg,
+		Duration: ed.cast.Duration(), Message: msg, Secrets: cast.SecretPattern,
 	}
 }
 

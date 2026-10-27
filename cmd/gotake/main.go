@@ -55,6 +55,8 @@ Edit commands (modify FILE in place, or write to -o OUT):
   gotake trim-exit [FILE]               remove the exit / Ctrl-D at the end of a recording
   gotake replace -find TEXT -replace TEXT [-regex] [-ignore-case] [-raw] [FILE]
                                         replace text in all output (e.g. a shell prompt)
+  gotake redact  [-pattern REGEX] [FILE] mask secrets in output with * (default: common
+                                        tokens, keys and password=... values)
 
 FILE defaults to out.take, and .take is added to a name without an extension ("demo" is demo.take).
 Recordings are saved as .take; FILE.cast reads and writes asciicast instead.
@@ -95,7 +97,7 @@ func main() {
 		err = cmdCat(args)
 	case "convert":
 		err = cmdConvert(args)
-	case "cut", "stretch", "speed", "idle", "typing", "inject", "pause", "marker", "replace", "trim-exit":
+	case "cut", "stretch", "speed", "idle", "typing", "inject", "pause", "marker", "replace", "redact", "trim-exit":
 		err = cmdEditOp(cmd, args)
 	case "version", "-v", "--version":
 		fmt.Println("gotake", version.Version)
