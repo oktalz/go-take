@@ -43,6 +43,7 @@ type rasterizer struct {
 type glyphKey struct {
 	r     rune
 	style int
+	cells int // 2 for wide characters
 }
 
 func newRasterizer(cols, rows int, o Options) (*rasterizer, error) {
@@ -83,15 +84,18 @@ func (r *rasterizer) size() image.Rectangle {
 	return image.Rect(0, 0, r.cols*r.cw+2*r.pad, r.rows*r.ch+2*r.pad+r.barH)
 }
 
-// glyph returns the coverage mask of a rune, rendered at the cell origin.
-func (r *rasterizer) glyph(ch rune, style int) *image.Alpha {
-	k := glyphKey{ch, style}
+// glyph returns the coverage mask of a rune over cells cells, rendered at the cell origin.
+func (r *rasterizer) glyph(ch rune, style, cells int) *image.Alpha {
+	k := glyphKey{ch, style, cells}
 	if a, ok := r.glyphs[k]; ok {
 		return a
 	}
-	a := drawnGlyph(ch, r.cw, r.ch, r.light)
+	var a *image.Alpha
+	if cells == 1 {
+		a = drawnGlyph(ch, r.cw, r.ch, r.light)
+	}
 	if a == nil {
-		a = r.fontGlyph(ch, style)
+		a = r.fontGlyph(ch, style, cells)
 	}
 	r.glyphs[k] = a
 	return a
@@ -99,7 +103,7 @@ func (r *rasterizer) glyph(ch rune, style int) *image.Alpha {
 
 // fontGlyph draws ch with the first font of the chain that has it, then with a
 // system font that has it. Without one, the primary font draws its missing-glyph box.
-func (r *rasterizer) fontGlyph(ch rune, style int) *image.Alpha {
+func (r *rasterizer) fontGlyph(ch rune, style, cells int) *image.Alpha {
 	var fams []*fontFamily
 	for _, f := range r.families {
 		if f.has(ch) {
@@ -112,20 +116,20 @@ func (r *rasterizer) fontGlyph(ch rune, style int) *image.Alpha {
 		}
 	}
 	for _, f := range fams {
-		if a := r.renderGlyph(f, ch, style); a != nil && !blank(a) {
+		if a := r.renderGlyph(f, ch, style, cells); a != nil && !blank(a) {
 			return a
 		}
 	}
-	if a := r.renderGlyph(r.families[0], ch, style); a != nil {
+	if a := r.renderGlyph(r.families[0], ch, style, cells); a != nil {
 		return a
 	}
-	return image.NewAlpha(image.Rect(0, 0, r.cw, r.ch))
+	return image.NewAlpha(image.Rect(0, 0, cells*r.cw, r.ch))
 }
 
-// renderGlyph draws ch from one font family into a cell-sized mask. Glyphs wider
-// than a cell (CJK, symbols from fallback fonts) are scaled down to fit and
+// renderGlyph draws ch from one font family into a mask cells cells wide. Glyphs
+// wider than that (symbols from fallback fonts) are scaled down to fit and
 // narrower ones are centered.
-func (r *rasterizer) renderGlyph(fam *fontFamily, ch rune, style int) *image.Alpha {
+func (r *rasterizer) renderGlyph(fam *fontFamily, ch rune, style, cells int) *image.Alpha {
 	f, embolden := fam.fonts[style], false
 	if f == nil {
 		f, embolden = fam.fonts[0], style&1 != 0
@@ -135,22 +139,23 @@ func (r *rasterizer) renderGlyph(fam *fontFamily, ch rune, style int) *image.Alp
 	if err != nil {
 		return nil
 	}
+	cw := cells * r.cw
 	adv, _ := face.GlyphAdvance(ch)
-	if w := adv.Ceil(); w > r.cw+1 {
-		size *= float64(r.cw) / float64(w)
+	if w := adv.Ceil(); w > cw+1 {
+		size *= float64(cw) / float64(w)
 		if face, err = r.faces.face(f, size); err != nil {
 			return nil
 		}
 		adv, _ = face.GlyphAdvance(ch)
 	}
-	a := image.NewAlpha(image.Rect(0, 0, r.cw, r.ch))
-	x := max(0, (fixed.I(r.cw)-adv)/2)
+	a := image.NewAlpha(image.Rect(0, 0, cw, r.ch))
+	x := max(0, (fixed.I(cw)-adv)/2)
 	d := font.Drawer{Dst: a, Src: image.Opaque, Face: face, Dot: fixed.Point26_6{X: x, Y: fixed.I(r.baseline)}}
 	d.DrawString(string(ch))
 	if embolden {
 		for y := range r.ch {
-			row := a.Pix[y*a.Stride : y*a.Stride+r.cw]
-			for x := r.cw - 1; x > 0; x-- {
+			row := a.Pix[y*a.Stride : y*a.Stride+cw]
+			for x := cw - 1; x > 0; x-- {
 				row[x] = max(row[x], row[x-1])
 			}
 		}
@@ -303,6 +308,9 @@ func (r *rasterizer) render(s *Screen) *image.Paletted {
 				r.drawImageCell(img, x, y, c)
 				continue
 			}
+			if c.WideTail && x > 0 && s.At(x-1, y).Wide {
+				continue // drawn with the wide character
+			}
 			r.drawCell(img, x, y, c, fg, bg)
 		}
 	}
@@ -363,13 +371,17 @@ func (r *rasterizer) drawCell(img *image.Paletted, x, y int, c Cell, fg, bg colo
 	if c.Italic {
 		style |= 2
 	}
+	cells := 1
+	if c.Wide && x+1 < r.cols {
+		cells = 2
+	}
 	var mask *image.Alpha
 	if c.Char != ' ' {
-		mask = r.glyph(c.Char, style)
+		mask = r.glyph(c.Char, style, cells)
 	}
 	for py := range r.ch {
 		row := img.Pix[(oy+py)*img.Stride+ox:]
-		for px := range r.cw {
+		for px := range cells * r.cw {
 			level := 0
 			if mask != nil {
 				level = (int(mask.Pix[py*mask.Stride+px])*blendLevels + 127) / 255

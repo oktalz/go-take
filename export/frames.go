@@ -90,6 +90,8 @@ type Cell struct {
 	FG, BG    color.RGBA
 	ImageCol  uint8 // which piece of Image the cell shows
 	ImageRow  uint8
+	Wide      bool // the character takes this cell and the next
+	WideTail  bool // the second cell of a wide character (Char is then a space)
 	Bold      bool
 	Italic    bool
 	Underline bool
@@ -202,7 +204,7 @@ func (t *term) write(s string) {
 
 // text feeds output without graphics commands to the emulator, fixing up full resets.
 func (t *term) text(s string) {
-	s = t.kitty.placeholders(s)
+	s = widen(t.kitty.placeholders(s))
 	for {
 		i := strings.Index(s, ris)
 		if i < 0 {
@@ -271,6 +273,12 @@ func (t *term) snapshot() *Screen {
 			c := Cell{
 				Char: ch, FG: t.theme.Color(g.FG), BG: t.theme.Color(g.BG),
 				Bold: g.Mode&modeBold != 0, Italic: g.Mode&modeItalic != 0, Underline: g.Mode&modeUnderline != 0,
+			}
+			if ch == wideTail {
+				c = Cell{Char: ' ', FG: c.FG, BG: c.BG, WideTail: true}
+				if x > 0 && !s.Cells[y*cols+x-1].WideTail {
+					s.Cells[y*cols+x-1].Wide = true
+				}
 			}
 			if row, col, ok := imageCellPos(ch); ok {
 				c = Cell{Char: ' ', FG: c.FG, BG: c.BG}

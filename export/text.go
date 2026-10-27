@@ -77,7 +77,9 @@ func ScreenText(w io.Writer, c *cast.Cast, o Options) error {
 	for y := range s.Rows {
 		var b strings.Builder
 		for x := range s.Cols {
-			b.WriteString(string(s.At(x, y).Char))
+			if c := s.At(x, y); !c.WideTail {
+				b.WriteString(string(c.Char))
+			}
 		}
 		lines[y] = strings.TrimRight(b.String(), " ")
 	}

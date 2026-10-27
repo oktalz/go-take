@@ -195,14 +195,25 @@ func (l svgLayout) writeText(w *bufio.Writer, s *Screen, y int) {
 	for x := 0; x < s.Cols; {
 		c := s.At(x, y)
 		fg, _ := l.colors(s, x, y)
+		if c.WideTail {
+			x++
+			continue
+		}
+		if c.Wide { // on its own, centered on its two cells: fonts do not make it exactly two wide
+			_, _ = fmt.Fprintf(w, `<text x="%g" y="%g" fill="%s" text-anchor="middle"%s>%s</text>`,
+				float64(x+1)*l.cw, float64(y)*l.ch+baseline, cssColor(fg), styleClass(c),
+				html.EscapeString(string(c.Char)))
+			x += 2
+			continue
+		}
 		var run strings.Builder
 		end := x
 		for ; end < s.Cols; end++ {
 			n := s.At(end, y)
-			if nfg, _ := l.colors(s, end, y); nfg != fg || !sameStyle(n, c) {
+			if nfg, _ := l.colors(s, end, y); nfg != fg || !sameStyle(n, c) || n.Wide || n.WideTail {
 				break
 			}
-			run.WriteString(string(n.Char))
+			_, _ = run.WriteString(string(n.Char))
 		}
 		if text := strings.TrimRight(run.String(), " "); strings.TrimSpace(text) != "" || c.Underline {
 			_, _ = fmt.Fprintf(w, `<text x="%g" y="%g" fill="%s"%s>%s</text>`,
