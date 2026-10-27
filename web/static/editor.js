@@ -521,7 +521,7 @@
   var css = getComputedStyle(document.documentElement);
   var color = function (name) { return css.getPropertyValue(name).trim(); };
   var C = {
-    o: color('--k-o'), key: color('--k-key'), i: color('--k-i'), m: color('--k-m'), r: color('--k-r'),
+    o: color('--k-o'), key: color('--k-key'), i: color('--k-i'), m: color('--k-m'), r: color('--k-r'), c: color('--k-c'),
     x: color('--danger'), sel: color('--sel'), selLine: color('--sel-line'), accent: color('--accent'),
     muted: color('--muted'), line: color('--line')
   };
@@ -1421,7 +1421,7 @@
       '<div class="fw-head"><span class="fw-title">Insert</span><span class="fw-where"></span>' +
       '<button type="button" class="fw-close" title="Close (Esc)" aria-label="Close">×</button></div>' +
       '<div class="fw-tabs" role="tablist">' +
-      ['command', 'output', 'marker', 'pause'].map(function (t) {
+      ['command', 'output', 'marker', 'caption', 'pause'].map(function (t) {
         return '<button type="button" role="tab" data-tab="' + t + '">' + t[0].toUpperCase() + t.slice(1) + '</button>';
       }).join('') + '</div>' +
       '<form class="fw-body">' +
@@ -1445,6 +1445,11 @@
       '  <div class="field"><label>Label</label><input name="label" type="text" placeholder="chapter name"></div>' +
       '  <p class="note">Markers show as ticks on the player\'s progress bar; [ and ] jump between them.</p>' +
       '</section>' +
+      '<section data-pane="caption">' +
+      '  <div class="field"><label>Text</label><input name="caption" type="text" placeholder="Now we deploy"></div>' +
+      '  <p class="note">Shown over the terminal until the next caption; insert an empty one to hide it. ' +
+      'The player and GIF/SVG/PNG exports draw captions.</p>' +
+      '</section>' +
       '<section data-pane="pause">' +
       '  <div class="field"><label>Seconds</label><input name="seconds" type="number" step="0.1" min="0" value="1"></div>' +
       '  <div class="fw-chips">' + [0.5, 1, 2, 3, 5].map(function (s) { return '<button type="button" data-sec="' + s + '">' + s + ' s</button>'; }).join('') + '</div>' +
@@ -1460,7 +1465,7 @@
     var form = w.querySelector('form');
     // a command or output goes before the selection by default, a marker or pause after
     // it; once Before or After is clicked, switching tabs keeps that choice
-    var TAB_SIDE = { command: 'before', output: 'before', marker: 'after', pause: 'after' };
+    var TAB_SIDE = { command: 'before', output: 'before', marker: 'after', caption: 'before', pause: 'after' };
     var side = TAB_SIDE[tab] || 'after', sideChosen = false;
     var at = function () { return hasSel ? (side === 'before' ? pos.before : pos.after) : pos.at; };
     var field = function (n) { return form.elements[n]; };
@@ -1547,6 +1552,8 @@
         req = { op: 'insert', at: i, events: parts.map(function (p, k) { return [k === 0 ? d : 0.05, 'o', p]; }) };
       } else if (t === 'marker') {
         req = { op: 'marker', at: i, label: field('label').value };
+      } else if (t === 'caption') {
+        req = { op: 'insert', at: i, events: [[0, 'c', field('caption').value]] };
       } else {
         var s = parseFloat(field('seconds').value);
         if (isNaN(s)) { flash('Enter the pause length.', true); return; }

@@ -25,6 +25,7 @@ const blendLevels = 4
 type rasterizer struct {
 	glyphs   map[glyphKey]*image.Alpha
 	images   map[*Placement]*image.Paletted // Kitty graphics dithered to the palette
+	captions map[string]*captionLayout
 	pal      *paletteBuilder
 	faces    faceCache
 	families []*fontFamily // Options.Fonts, then Go Mono
@@ -49,7 +50,8 @@ type glyphKey struct {
 func newRasterizer(cols, rows int, o Options) (*rasterizer, error) {
 	r := &rasterizer{
 		o: o, glyphs: map[glyphKey]*image.Alpha{}, images: map[*Placement]*image.Paletted{},
-		cols: cols, rows: rows, pad: o.Padding,
+		captions: map[string]*captionLayout{},
+		cols:     cols, rows: rows, pad: o.Padding,
 	}
 	for _, p := range o.Fonts {
 		fam, err := fileFamily(p)
@@ -247,6 +249,12 @@ func (r *rasterizer) prepare(screens []*Screen) {
 		r.pal.overflow = true
 		r.bgIndex = uint8(r.pal.colors.Index(r.o.Theme.BG))
 	}
+	for _, s := range screens {
+		if s.Caption != "" {
+			r.pal.ramp(captionColors(r.o.Theme))
+			break
+		}
+	}
 	r.prepareImages(placements(screens))
 	if r.o.Theme.Transparent {
 		// GIF and PNG encoders treat a palette entry with alpha 0 as transparent
@@ -314,6 +322,7 @@ func (r *rasterizer) render(s *Screen) *image.Paletted {
 			r.drawCell(img, x, y, c, fg, bg)
 		}
 	}
+	r.drawCaption(img, s.Caption)
 	return img
 }
 
@@ -358,6 +367,7 @@ func (r *rasterizer) trueColor(img *image.Paletted, s *Screen) image.Image {
 			draw.Draw(out, dst, src, piece.Min, draw.Over)
 		}
 	}
+	r.drawCaptionRGBA(out, s.Caption)
 	return out
 }
 

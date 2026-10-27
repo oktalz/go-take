@@ -66,7 +66,9 @@ func FormatFor(path string) Format {
 const defaultTypeDelay = 0.08
 
 // takeWords maps event codes to keywords; other codes are written as "event".
-var takeWords = map[string]string{Output: "out", Input: "in", Resize: "resize", Marker: "marker", Exit: "exit"}
+var takeWords = map[string]string{
+	Output: "out", Input: "in", Resize: "resize", Marker: "marker", Exit: "exit", Caption: "caption",
+}
 
 // Encoder writes a recording event by event.
 type Encoder interface {
@@ -223,7 +225,7 @@ func (e *takeEncoder) writeSingle(ev Event) {
 	switch {
 	case ev.Code == Resize || ev.Code == Exit:
 		e.line(keyword(word), FormatDelay(ev.Delay), quoteTake(ev.Data))
-	case ev.Data == "" && ev.Code == Marker:
+	case ev.Data == "" && (ev.Code == Marker || ev.Code == Caption):
 		e.line(keyword(word), FormatDelay(ev.Delay))
 	default:
 		e.line(keyword(word), FormatDelay(ev.Delay), quoteString(ev.Data))
@@ -439,7 +441,7 @@ func (c *Cast) headerLine(word string, args []string) (bool, error) {
 	return true, nil
 }
 
-// keywordEvent returns the event of an out, in, resize, marker or exit line.
+// keywordEvent returns the event of an out, in, resize, marker, exit or caption line.
 func keywordEvent(word string, args []string) ([]Event, error) {
 	code := ""
 	for k, v := range takeWords {
@@ -451,7 +453,7 @@ func keywordEvent(word string, args []string) ([]Event, error) {
 		return nil, errors.New("unknown keyword")
 	}
 	minArgs := 2
-	if code == Marker {
+	if code == Marker || code == Caption {
 		minArgs = 1
 	}
 	if err := wantArgs(args, minArgs, 2); err != nil {

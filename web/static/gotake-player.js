@@ -42,6 +42,11 @@
     '.gotake .xterm-cursor-layer, .gotake .xterm-helpers{pointer-events:none}',
     '.gotake-overlay{position:absolute;inset:0 0 38px 0;display:flex;align-items:center;justify-content:center;cursor:pointer}',
     '.gotake-overlay[hidden]{display:none}',
+    '.gotake-caption{position:absolute;left:0;right:0;bottom:18px;margin:0 auto;width:fit-content;max-width:88%;',
+    'padding:.45em .8em;border-radius:6px;background:var(--gotake-caption-bg,#373839);color:var(--gotake-caption-fg,#fff);',
+    'text-align:center;',
+    'font:500 15px/1.35 system-ui,-apple-system,"Segoe UI",Cantarell,Ubuntu,sans-serif;white-space:pre-wrap;pointer-events:none}',
+    '.gotake-caption[hidden]{display:none}',
     '.gotake-big{width:64px;height:64px;border-radius:50%;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;',
     'transition:transform .15s,background .15s}',
     '.gotake-overlay:hover .gotake-big{transform:scale(1.08);background:rgba(0,0,0,.75)}',
@@ -131,7 +136,7 @@
     return { header: header, events: events };
   }
 
-  var TAKE_CODES = { out: 'o', 'in': 'i', resize: 'r', marker: 'm', exit: 'x' };
+  var TAKE_CODES = { out: 'o', 'in': 'i', resize: 'r', marker: 'm', exit: 'x', caption: 'c' };
   var TAKE_ESC = { e: '\x1b', r: '\r', n: '\n', t: '\t', '\\': '\\', '"': '"' };
 
   /** Split a .take line into words: bare words and quoted strings, up to a # comment. */
@@ -243,6 +248,21 @@
       });
     }
     return out;
+  }
+
+  // captionColors returns caption [text, box] colors for an xterm theme, as the
+  // exporter picks them: the background a fifth of the way to the text color,
+  // and white or black text, whichever stands out. null for colors it cannot read.
+  function captionColors(theme) {
+    var rgb = function (c) {
+      var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(c || '');
+      return m && [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+    };
+    var bg = rgb(theme.background), fg = rgb(theme.foreground);
+    if (!bg || !fg) return null;
+    var box = bg.map(function (v, i) { return Math.floor((v * 4 + fg[i] + 2) / 5); });
+    var light = 299 * box[0] + 587 * box[1] + 114 * box[2] > 128 * 1000;
+    return [light ? '#000' : '#fff', 'rgb(' + box.join(',') + ')'];
   }
 
   function fmtTime(s) {
@@ -773,6 +793,10 @@
     vp.appendChild(scaler);
     root.appendChild(vp);
 
+    var caption = this.captionEl = el('div', 'gotake-caption');
+    caption.hidden = true;
+    vp.appendChild(caption);
+
     var overlay = this.overlay = el('div', 'gotake-overlay', '<div class="gotake-big">' + ICONS.play + '</div>');
     overlay.addEventListener('click', function () { self.play(); root.focus(); });
     root.appendChild(overlay);
@@ -988,6 +1012,11 @@
     var theme = o.theme || toXtermTheme(term.theme) || DEFAULT_THEME;
     this.term.options.theme = Object.assign({}, DEFAULT_THEME, theme);
     if (theme.background) this.root.style.setProperty('--gotake-bg', theme.background);
+    var cc = captionColors(this.term.options.theme);
+    if (cc) {
+      this.root.style.setProperty('--gotake-caption-bg', cc[1]);
+      this.root.style.setProperty('--gotake-caption-fg', cc[0]);
+    }
     this._renderMarkers();
     var start = keepTime ? Math.min(this.time, t) : (o.poster != null ? this.resolveTime(o.poster) : this.startTime());
     this.index = 0; // force a full re-render from the new events
@@ -1033,9 +1062,18 @@
         }
       } else if (e.code === 'm') {
         this._emit('marker', { t: e.t, label: e.data });
+      } else if (e.code === 'c') {
+        this._caption(e.data);
       }
     }
     if (buf) term.write(buf);
+  };
+
+  // _caption shows text over the terminal (a caption event); empty hides it.
+  Player.prototype._caption = function (text) {
+    if (!this.captionEl) return;
+    this.captionEl.textContent = text || '';
+    this.captionEl.hidden = !text;
   };
 
   // _kittyRedraw draws Kitty graphics on the next frame.
@@ -1092,6 +1130,7 @@
       this.term.resize(this.cols, this.rows);
       this.term.write('\x1bc\x1b[?25l');
       this.kitty.reset();
+      this._caption('');
       this.index = 0;
     }
     this.time = t;

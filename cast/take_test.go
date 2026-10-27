@@ -192,3 +192,20 @@ func TestTakeCellSize(t *testing.T) {
 		t.Fatalf("cell size = %dx%d", back.Header.Term.CellWidth, back.Header.Term.CellHeight)
 	}
 }
+
+func TestTakeCaption(t *testing.T) {
+	c := New(80, 24)
+	c.Events = []Event{{Delay: 1, Code: Caption, Data: "Now we deploy"}, {Delay: 2, Code: Caption}}
+	var buf bytes.Buffer
+	if err := c.Write(&buf, FormatTake); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), `caption 1.0 "Now we deploy"`) {
+		t.Fatalf("no caption line:\n%s", buf.String())
+	}
+	back, err := Read(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sameEvents(t, c.Events, back.Events)
+}

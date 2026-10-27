@@ -40,7 +40,8 @@ import (
 // (for output since the last keystroke, escape sequences removed),
 // hide and show (leave a part out of the recording, such as setup; what is
 // still on screen from it, the prompt or everything since a clear, is kept),
-// and marker [LABEL].
+// marker [LABEL], and caption [TEXT] (shown over the terminal until the next
+// caption; without TEXT it hides the caption).
 type Script struct {
 	Title      string
 	Shell      string // command to run, default $SHELL
@@ -55,7 +56,7 @@ type Script struct {
 // Step is one line of a script.
 type Step struct {
 	Re    *regexp.Regexp // wait
-	Kind  string         // type, send, key, sleep, wait, hide, show, marker
+	Kind  string         // type, send, key, sleep, wait, hide, show, marker, caption
 	Text  string         // what type, send and key send; the marker label
 	Line  int
 	Count int     // key repetitions
@@ -140,7 +141,7 @@ func (s *Script) line(n int, word string, args []string) error {
 		if err := argCount(args, 0, 0); err != nil {
 			return err
 		}
-	case "marker":
+	case "marker", "caption":
 		if err := argCount(args, 0, 1); err != nil {
 			return err
 		}
@@ -362,6 +363,8 @@ func (r *scriptRun) step(st Step) error {
 		}
 	case "marker":
 		r.w.emit(cast.Marker, st.Text)
+	case "caption":
+		r.w.emit(cast.Caption, st.Text)
 	default:
 	}
 	return nil

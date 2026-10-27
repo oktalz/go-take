@@ -111,6 +111,7 @@ func (l svgLayout) writeScreen(w *bufio.Writer, s *Screen) {
 	for y := range s.Rows {
 		l.writeImageCells(w, s, y)
 	}
+	l.writeSVGCaption(w, s.Caption)
 }
 
 // writeImages writes each Kitty graphics placement once, as a PNG sized to its cells.

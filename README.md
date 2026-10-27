@@ -71,7 +71,7 @@ sleep 2
 ```
 
 Steps are `type`, `send` (all at once), keys (`enter`, `tab`, `up`, `ctrl+c`, … with an optional count), `sleep`,
-`wait REGEXP [TIMEOUT]`, `hide` / `show` and `marker`. Strings use the `.take` quoting; `'single quotes'` take text
+`wait REGEXP [TIMEOUT]`, `hide` / `show`, `marker` and `caption`. Strings use the `.take` quoting; `'single quotes'` take text
 as it is, which suits regular expressions. `gotake run -h` lists everything.
 
 ## The .take format
@@ -91,13 +91,18 @@ marker 0 "tests"
 ```
 
 - Each line is one event: a keyword, the delay in seconds since the previous event (`80ms` and `1.5s` work too),
-  then its data. Keywords are `out`, `in`, `resize`, `marker`, `exit` and `type`.
+  then its data. Keywords are `out`, `in`, `resize`, `marker`, `exit`, `caption` and `type`.
+- **`caption 1 "Now we deploy"`** shows text in a box at the bottom of the terminal until the next caption; a
+  `caption` without text hides it. The player and GIF, SVG and PNG exports draw captions; other asciicast players
+  skip them.
 - **`type`** is text typed at the prompt: the delay before the first key, the text, then the delay before each
   following key, or `every=0.08` for a steady speed. You can change the text without touching the delays. New
   characters get the average delay, and delays left over are ignored.
 - **`wait 2`** on its own line adds a 2 second pause before the next event.
-- Strings use `\e`, `\r`, `\n`, `\t`, `\\`, `\"`, `\xHH` and `\uXXXX` escapes. `#` starts a comment, but comments are
-  not kept when gotake saves the file.
+- Strings use `\e`, `\r`, `\n`, `\t`, `\\`, `\"`, `\xHH` and `\uXXXX` escapes; `'single quoted'` strings are taken as
+  they are. `#` starts a comment, but comments are not kept when gotake saves the file.
+- `cell 9x18` in the header is the size of a terminal cell in pixels, recorded when the terminal reports it, so
+  images are drawn at the size they had.
 
 A `.take` file keeps everything an asciicast file holds, so converting in either direction loses nothing:
 
@@ -158,6 +163,7 @@ gotake typing  -delay 0.07 -jitter 0.02 demo.take
 gotake inject  -at 0:30 -cmd "kubectl get pods" -output-file pods.txt demo.take
 gotake pause   -at 0:42 -seconds 2 demo.take
 gotake marker  -at 0:42 -label "deploy" demo.take
+gotake caption -at 0:42 -text "Now we deploy" demo.take
 gotake replace -find 'zlatko@WSL' -replace 'demo' demo.take
 gotake redact  demo.take          # mask tokens, keys and password=... values with *
 ```

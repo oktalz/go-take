@@ -13,6 +13,7 @@
   --k-key: #e5a50a;
   --k-i: #5b9bd5;
   --k-m: #f2f2f2;
+  --k-c: #f0a8d0;
   --k-r: #c678dd;
   --sel: rgba(229, 165, 10, .16);
   --sel-line: rgba(229, 165, 10, .55);
@@ -78,7 +79,7 @@ textarea { width: 100%; resize: vertical; }
 .c-code { text-align: center; }
 .code { display: inline-block; min-width: 18px; padding: 0 4px; border-radius: 3px; font-weight: 700; font-size: 11px; color: #0e0f10; }
 .code.o { background: var(--k-o); } .code.key { background: var(--k-key); } .code.i { background: var(--k-i); }
-.code.m { background: var(--k-m); } .code.r { background: var(--k-r); } .code.x { background: var(--danger); }
+.code.m { background: var(--k-m); } .code.c { background: var(--k-c); } .code.r { background: var(--k-r); } .code.x { background: var(--danger); }
 .c-data { overflow: hidden; white-space: pre; text-overflow: ellipsis; }
 .c-data .esc { color: var(--muted); }
 .c-delay input { width: 100%; text-align: right; padding: 1px 4px; height: 20px; }

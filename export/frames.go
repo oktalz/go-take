@@ -99,6 +99,7 @@ type Cell struct {
 
 // Screen is a snapshot of the terminal.
 type Screen struct {
+	Caption       string // shown over the terminal (cast.Caption)
 	Cells         []Cell // Rows*Cols, row major
 	Cols, Rows    int
 	CursorX       int
@@ -110,7 +111,7 @@ type Screen struct {
 func (s *Screen) At(x, y int) Cell { return s.Cells[y*s.Cols+x] }
 
 func (s *Screen) equal(o *Screen) bool {
-	if s.Cols != o.Cols || s.Rows != o.Rows || s.CursorVisible != o.CursorVisible ||
+	if s.Cols != o.Cols || s.Rows != o.Rows || s.CursorVisible != o.CursorVisible || s.Caption != o.Caption ||
 		(s.CursorVisible && (s.CursorX != o.CursorX || s.CursorY != o.CursorY)) {
 		return false
 	}
@@ -133,6 +134,7 @@ type term struct {
 	vt      vt10x.Terminal
 	kitty   *kitty
 	pending string // output held back until the escape sequence it starts is complete
+	caption string // the caption shown now
 	cell    [2]int // cell size in pixels from the header
 	theme   Theme
 	synced  bool // inside a synchronized update (mode 2026): the screen is half drawn
@@ -171,6 +173,8 @@ func (t *term) apply(e cast.Event) {
 		if _, err := fmt.Sscanf(e.Data, "%dx%d", &cols, &rows); err == nil && cols > 0 && rows > 0 {
 			t.vt.Resize(cols, rows)
 		}
+	case cast.Caption:
+		t.caption = e.Data
 	default:
 	}
 }
@@ -274,7 +278,7 @@ func (t *term) snapshot() *Screen {
 	t.vt.Lock()
 	defer t.vt.Unlock()
 	cols, rows := t.vt.Size()
-	s := &Screen{Cols: cols, Rows: rows, Cells: make([]Cell, cols*rows)}
+	s := &Screen{Cols: cols, Rows: rows, Cells: make([]Cell, cols*rows), Caption: t.caption}
 	for y := range rows {
 		for x := range cols {
 			g := t.vt.Cell(x, y)

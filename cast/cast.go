@@ -31,6 +31,9 @@ const (
 	Resize = "r" // terminal resize, data is "COLSxROWS"
 	Marker = "m" // marker / chapter, data is an optional label
 	Exit   = "x" // process exit, data is the exit status
+	// Caption is text shown over the terminal until the next caption; an
+	// empty one hides it (gotake extension).
+	Caption = "c"
 )
 
 // Theme is the terminal color theme.
