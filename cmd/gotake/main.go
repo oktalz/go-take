@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -27,6 +28,7 @@ const usage = `gotake — terminal recorder
 
 Usage:
   gotake rec    [flags] [FILE]          record a terminal session (the final exit is left out)
+  gotake run    [flags] SCRIPT          record a session driven by a script (see "gotake run -h")
   gotake play   [flags] [FILE]          replay in this terminal (space: pause, q: quit)
   gotake edit   [flags] [FILE]          open the web editor
   gotake serve  [flags] [DIR]           serve recordings + embeddable player
@@ -75,6 +77,8 @@ func main() {
 	switch cmd {
 	case "rec", "record":
 		err = cmdRec(args)
+	case "run":
+		err = cmdRun(args)
 	case "play":
 		err = cmdPlay(args)
 	case "edit", "editor":
@@ -202,6 +206,98 @@ func cmdRec(args []string) error {
 		}
 	}
 	eprintf("\x1b[33m■ recording saved to %s\x1b[0m\n", path)
+	return nil
+}
+
+const runHelp = `Records a session from a script instead of typing, so a demo can be made
+again whenever what it shows changes. One setting or step per line; # starts
+a comment; text with spaces is quoted ("ls -l"), with \e \r \n \t escapes.
+
+Settings, before the first step:
+  size 80x24              terminal size (default 80x24)
+  shell "bash --norc"     command to run (default $SHELL)
+  title TEXT              recording title
+  env NAME VALUE          environment variable
+  typing 80ms [40ms]      typing speed and its random variation
+  timeout 10s             how long wait waits by default
+
+Steps:
+  type "ls -l" [DELAY]    type text, a character at a time
+  send "text"             send text at once (no typing)
+  enter [N]               press a key N times; also tab space backspace esc up
+                          down left right home end pgup pgdown delete ctrl+c...
+  sleep 1.5s              pause
+  wait "\$ $" [TIMEOUT]   wait for output matching a regular expression
+                          (output since the last key, escape sequences removed)
+  hide / show             leave out what happens in between (e.g. setup); the
+                          prompt, or everything since a clear, stays on screen
+  marker [LABEL]          add a marker
+
+Example:
+  size 80x20
+  shell "bash --norc --noprofile"
+  hide
+  send "PS1='$ '\r"
+  wait "^\$ $"
+  show
+  type "echo hello"
+  enter
+  wait "^\$ $"
+  sleep 2
+
+Flags:
+`
+
+func cmdRun(args []string) error {
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	fs.Usage = func() {
+		eprintf("Usage: gotake run [flags] SCRIPT\n\n%s", runHelp)
+		fs.PrintDefaults()
+	}
+	out := fs.String("o", "", "recording to write (default: SCRIPT with .take instead of its extension)")
+	overwrite := fs.Bool("y", false, "overwrite the recording if it exists")
+	quiet := fs.Bool("q", false, "do not show the session while recording")
+	pos, err := parseArgs(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		fs.Usage()
+		return errors.New("run: expected one SCRIPT argument")
+	}
+	f, err := os.Open(pos[0])
+	if err != nil {
+		return err
+	}
+	script, err := record.ParseScript(f)
+	_ = f.Close()
+	if err != nil {
+		return fmt.Errorf("%s: %w", pos[0], err)
+	}
+	path := *out
+	if path == "" {
+		path = strings.TrimSuffix(pos[0], filepath.Ext(pos[0])) + cast.TakeExt
+	}
+	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	if !*overwrite {
+		flags |= os.O_EXCL
+	}
+	w, err := os.OpenFile(path, flags, 0o644)
+	if err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("%s exists, use -y to overwrite", path)
+		}
+		return err
+	}
+	var live io.Writer = os.Stdout
+	if *quiet {
+		live = io.Discard
+	}
+	err = record.RunScript(w, live, script, cast.FormatFor(path))
+	if err := errors.Join(err, w.Close()); err != nil {
+		return err
+	}
+	eprintf("\r\n\x1b[33m■ recording saved to %s\x1b[0m\n", path)
 	return nil
 }
 

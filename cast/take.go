@@ -311,7 +311,7 @@ func readTake(data []byte) (*Cast, error) {
 	n := 0
 	for line := range strings.Lines(string(data)) {
 		n++
-		toks, err := splitTake(line)
+		toks, err := SplitLine(line)
 		if err != nil {
 			return nil, fmt.Errorf("line %d: %w", n, err)
 		}
@@ -356,7 +356,7 @@ func (c *Cast) takeLine(word string, args []string) ([]Event, error) {
 		if err := wantArgs(args, 1, 1); err != nil {
 			return nil, err
 		}
-		d, err := parseDelay(args[0])
+		d, err := ParseDelay(args[0])
 		return []Event{{Delay: d}}, err
 	case "type":
 		return typeEvents(args)
@@ -364,7 +364,7 @@ func (c *Cast) takeLine(word string, args []string) ([]Event, error) {
 		if err := wantArgs(args, 3, 3); err != nil {
 			return nil, err
 		}
-		d, err := parseDelay(args[0])
+		d, err := ParseDelay(args[0])
 		return []Event{{Delay: d, Code: args[1], Data: args[2]}}, err
 	default:
 		return keywordEvent(word, args)
@@ -417,7 +417,7 @@ func (c *Cast) headerLine(word string, args []string) (bool, error) {
 		if err := wantArgs(args, 1, 1); err != nil {
 			return true, err
 		}
-		d, err := parseDelay(args[0])
+		d, err := ParseDelay(args[0])
 		h.IdleTimeLimit = d
 		return true, err
 	case "env":
@@ -457,7 +457,7 @@ func keywordEvent(word string, args []string) ([]Event, error) {
 	if err := wantArgs(args, minArgs, 2); err != nil {
 		return nil, err
 	}
-	d, err := parseDelay(args[0])
+	d, err := ParseDelay(args[0])
 	e := Event{Delay: d, Code: code}
 	if len(args) > 1 {
 		e.Data = args[1]
@@ -472,7 +472,7 @@ func typeEvents(args []string) ([]Event, error) {
 	if len(args) < 2 {
 		return nil, errors.New("want DELAY \"text\" [delays...]")
 	}
-	first, err := parseDelay(args[0])
+	first, err := ParseDelay(args[0])
 	if err != nil {
 		return nil, err
 	}
@@ -483,13 +483,13 @@ func typeEvents(args []string) ([]Event, error) {
 	every := defaultTypeDelay
 	var delays []float64
 	if rest := args[2:]; len(rest) == 1 && strings.HasPrefix(rest[0], "every=") {
-		if every, err = parseDelay(strings.TrimPrefix(rest[0], "every=")); err != nil {
+		if every, err = ParseDelay(strings.TrimPrefix(rest[0], "every=")); err != nil {
 			return nil, err
 		}
 	} else if len(rest) > 0 {
 		sum := 0.0
 		for _, s := range rest {
-			d, err := parseDelay(s)
+			d, err := ParseDelay(s)
 			if err != nil {
 				return nil, err
 			}
@@ -531,8 +531,8 @@ func setString(dst *string, args []string) error {
 	return nil
 }
 
-// parseDelay reads seconds: "0.5", "0.5s" or "500ms".
-func parseDelay(s string) (float64, error) {
+// ParseDelay reads seconds: "0.5", "0.5s" or "500ms".
+func ParseDelay(s string) (float64, error) {
 	scale := 1.0
 	if v, ok := strings.CutSuffix(s, "ms"); ok {
 		s, scale = v, 0.001
@@ -546,8 +546,10 @@ func parseDelay(s string) (float64, error) {
 	return d * scale, nil
 }
 
-// splitTake splits a line into words: bare words and quoted strings, up to a comment.
-func splitTake(line string) ([]string, error) {
+// SplitLine splits a line of a .take file or a gotake script into words: bare
+// words, "quoted strings" (with \e, \r, \n, \xHH and \uHHHH escapes) and
+// 'raw strings' (without escapes, handy for regular expressions), up to a comment.
+func SplitLine(line string) ([]string, error) {
 	var toks []string
 	for i := 0; i < len(line); {
 		switch c := line[i]; {
@@ -562,6 +564,13 @@ func splitTake(line string) ([]string, error) {
 			}
 			toks = append(toks, s)
 			i += n
+		case c == '\'':
+			end := strings.IndexByte(line[i+1:], '\'')
+			if end < 0 {
+				return nil, errors.New("unterminated string")
+			}
+			toks = append(toks, line[i+1:i+1+end])
+			i += end + 2
 		default:
 			j := i
 			for j < len(line) && !strings.ContainsRune(" \t\r\n", rune(line[j])) {

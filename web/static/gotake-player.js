@@ -141,6 +141,11 @@
       var c = line[i];
       if (c === ' ' || c === '\t' || c === '\r') { i++; continue; }
       if (c === '#') break;
+      if (c === "'") { // raw string, no escapes
+        var end = line.indexOf("'", i + 1);
+        if (end < 0) throw new Error('unterminated string');
+        out.push(line.slice(i + 1, end)); i = end + 1; continue;
+      }
       if (c !== '"') {
         var j = i;
         while (j < line.length && !/[ \t\r]/.test(line[j])) j++;

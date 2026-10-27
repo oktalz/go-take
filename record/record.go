@@ -92,7 +92,7 @@ func Record(out io.Writer, opts Options) error {
 		onInput = func(s string) { w.emit(cast.Input, s) }
 	}
 	go copyInput(ptmx, onInput)
-	if err := copyOutput(ptmx, w); err != nil {
+	if err := copyOutput(ptmx, os.Stdout, func(s string) { w.emit(cast.Output, s) }); err != nil {
 		return errors.Join(err, w.close())
 	}
 
@@ -131,23 +131,23 @@ func copyInput(ptmx io.Writer, onInput func(string)) {
 	}
 }
 
-// copyOutput forwards pty output to stdout and records it until the child exits.
-func copyOutput(ptmx io.Reader, w *eventWriter) error {
+// copyOutput forwards pty output to live and passes it to emit until the child exits.
+func copyOutput(ptmx io.Reader, live io.Writer, emit func(string)) error {
 	buf := make([]byte, 32*1024)
 	var dec utf8Buffer
 	for {
 		n, err := ptmx.Read(buf)
 		if n > 0 {
-			if _, werr := os.Stdout.Write(buf[:n]); werr != nil {
+			if _, werr := live.Write(buf[:n]); werr != nil {
 				return werr
 			}
 			if s := dec.decode(buf[:n]); s != "" {
-				w.emit(cast.Output, s)
+				emit(s)
 			}
 		}
 		if err != nil {
 			if s := dec.flush(); s != "" {
-				w.emit(cast.Output, s)
+				emit(s)
 			}
 			if childExited(err) {
 				return nil

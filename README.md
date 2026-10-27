@@ -47,6 +47,33 @@ The `exit` (or Ctrl-D) that ends a recording is removed automatically, so it end
 `-keep-exit` to keep it. For older recordings, use `gotake trim-exit FILE` or *Remove trailing exit* in the editor's
 right-click menu.
 
+## Record from a script
+
+`gotake run` records a session from a script instead of your typing, so a demo can be made again whenever what it
+shows changes, for example in CI:
+
+```sh
+gotake run demo.script            # records to demo.take; -o OUT, -q to not show it while recording
+```
+
+```text
+size 80x20
+shell "bash --norc --noprofile"
+hide                              # set up without recording it
+send "PS1='$ '\r"
+wait '^\$ $'
+show                              # the prompt stays on screen
+type "ls --color"                 # typed a character at a time (typing 80ms 40ms sets the speed)
+enter
+wait '^\$ $'                      # wait for output matching a regular expression
+marker files
+sleep 2
+```
+
+Steps are `type`, `send` (all at once), keys (`enter`, `tab`, `up`, `ctrl+c`, … with an optional count), `sleep`,
+`wait REGEXP [TIMEOUT]`, `hide` / `show` and `marker`. Strings use the `.take` quoting; `'single quotes'` take text
+as it is, which suits regular expressions. `gotake run -h` lists everything.
+
 ## The .take format
 
 A recording made with `gotake rec demo` (the `.take` extension is added for you) looks like this:
@@ -247,7 +274,7 @@ task docs           # export the README demo (docs/demo.svg) from examples/demo.
 | path | |
 |---|---|
 | `cast/` | `.take` and asciicast read/write and all edit operations, shared by the CLI and the editor |
-| `record/` | PTY recorder |
+| `record/` | PTY recorder and script runner (`gotake run`) |
 | `play/` | terminal playback |
 | `export/` | GIF, PNG, SVG, HTML and text export, using the vt10x terminal emulator |
 | `web/` | editor server and API, gallery server, embedded static assets |
