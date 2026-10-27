@@ -186,6 +186,7 @@ minutes:seconds (`1:02.5`) or a marker label, for example `gotake cut -from intr
 gotake export -o demo.gif demo.take                  # animated GIF
 gotake export -f svg -window demo.take               # animated SVG with a title bar -> demo.svg
 gotake export -o demo.html -autoplay demo.take       # one self-contained HTML page with the player
+gotake export -o demo.mp4 -window demo.take          # H.264 video (.webm for VP9); needs ffmpeg
 gotake export -o poster.png -at 0:12 demo.take       # one frame as PNG (svg-frame for SVG)
 gotake export -f txt demo.take                       # plain-text transcript
 gotake export -f v2 -o old.cast demo.take            # asciicast v2 for older tools
@@ -202,8 +203,10 @@ maximize and close buttons on Windows (WSL included), or the colored buttons on 
 its colors from the theme.
 
 GIF and PNG are rendered in Go with the built-in Go Mono font and need nothing installed. Animated SVG is usually
-smaller and stays sharp at any size, but uses the viewer's monospace font. A section exported with `-from` starts on
-the same screen it had in the full recording.
+smaller and stays sharp at any size, but uses the viewer's monospace font. MP4 and WebM are drawn the same way in
+full color and encoded by [ffmpeg](https://ffmpeg.org), which must be in `PATH`; they are much smaller than a GIF
+for long sessions and are what chat and social apps take. A section exported with `-from` starts on the same screen
+it had in the full recording.
 
 ### Fonts in GIF and PNG
 

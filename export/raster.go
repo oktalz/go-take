@@ -38,7 +38,10 @@ type rasterizer struct {
 	pad      int
 	cols     int
 	rows     int
-	bgIndex  uint8
+	// fullColor: the output is redrawn in full color (trueColor), so images
+	// are not dithered to the palette.
+	fullColor bool
+	bgIndex   uint8
 }
 
 type glyphKey struct {
@@ -265,7 +268,7 @@ func (r *rasterizer) prepare(screens []*Screen) {
 // prepareImages fills the free palette entries with the images' colors and
 // dithers each image to the palette.
 func (r *rasterizer) prepareImages(ps []*Placement) {
-	if len(ps) == 0 {
+	if len(ps) == 0 || r.fullColor {
 		return
 	}
 	scaled := make([]*image.NRGBA, len(ps))
@@ -313,7 +316,9 @@ func (r *rasterizer) render(s *Screen) *image.Paletted {
 				fg, bg = bg, fg
 			}
 			if c.Image != nil {
-				r.drawImageCell(img, x, y, c)
+				if !r.fullColor {
+					r.drawImageCell(img, x, y, c)
+				}
 				continue
 			}
 			if c.WideTail && x > 0 && s.At(x-1, y).Wide {
@@ -341,15 +346,25 @@ func (r *rasterizer) drawImageCell(img *image.Paletted, x, y int, c Cell) {
 	}
 }
 
-// trueColor redraws the image cells of s over a full color copy of img.
+// trueColor redraws the cells of s over a full color copy of img: images,
+// and text with exact colors and smooth edges, which a palette may not hold.
 func (r *rasterizer) trueColor(img *image.Paletted, s *Screen) image.Image {
 	out := image.NewNRGBA(img.Rect)
 	draw.Draw(out, out.Rect, img, image.Point{}, draw.Src)
 	scaled := map[*Placement]*image.NRGBA{}
+	cursor := s.CursorVisible && !r.o.HideCursor
 	for y := 0; y < s.Rows && y < r.rows; y++ {
 		for x := 0; x < s.Cols && x < r.cols; x++ {
 			c := s.At(x, y)
 			if c.Image == nil {
+				if c.WideTail && x > 0 && s.At(x-1, y).Wide {
+					continue
+				}
+				fg, bg := c.FG, c.BG
+				if cursor && x == s.CursorX && y == s.CursorY {
+					fg, bg = bg, fg
+				}
+				r.drawCellRGBA(out, x, y, c, fg, bg)
 				continue
 			}
 			src := scaled[c.Image]
@@ -371,9 +386,35 @@ func (r *rasterizer) trueColor(img *image.Paletted, s *Screen) image.Image {
 	return out
 }
 
-func (r *rasterizer) drawCell(img *image.Paletted, x, y int, c Cell, fg, bg color.RGBA) {
-	ramp := r.pal.ramp(fg, bg)
+// drawCellRGBA is drawCell in full color.
+func (r *rasterizer) drawCellRGBA(img *image.NRGBA, x, y int, c Cell, fg, bg color.RGBA) {
 	ox, oy := r.pad+x*r.cw, r.pad+r.barH+y*r.ch
+	mask, cells := r.cellGlyph(x, c)
+	seeThrough := r.o.Theme.Transparent && bg == r.o.Theme.BG
+	for py := range r.ch {
+		row := img.Pix[(oy+py)*img.Stride+ox*4:]
+		for px := range cells * r.cw {
+			a := 0
+			if mask != nil {
+				a = int(mask.Pix[py*mask.Stride+px])
+			}
+			if c.Underline && py == r.ch-2 {
+				a = 255
+			}
+			p := row[px*4 : px*4+4]
+			if seeThrough { // text over a see-through background
+				p[0], p[1], p[2], p[3] = fg.R, fg.G, fg.B, uint8(a)
+				continue
+			}
+			mix := func(f, b uint8) uint8 { return uint8((int(f)*a + int(b)*(255-a) + 127) / 255) }
+			p[0], p[1], p[2], p[3] = mix(fg.R, bg.R), mix(fg.G, bg.G), mix(fg.B, bg.B), 255
+		}
+	}
+}
+
+// cellGlyph returns the coverage mask of the cell at column x (nil for a
+// space) and how many cells it covers.
+func (r *rasterizer) cellGlyph(x int, c Cell) (mask *image.Alpha, cells int) {
 	style := 0
 	if c.Bold {
 		style |= 1
@@ -381,14 +422,20 @@ func (r *rasterizer) drawCell(img *image.Paletted, x, y int, c Cell, fg, bg colo
 	if c.Italic {
 		style |= 2
 	}
-	cells := 1
+	cells = 1
 	if c.Wide && x+1 < r.cols {
 		cells = 2
 	}
-	var mask *image.Alpha
 	if c.Char != ' ' {
 		mask = r.glyph(c.Char, style, cells)
 	}
+	return mask, cells
+}
+
+func (r *rasterizer) drawCell(img *image.Paletted, x, y int, c Cell, fg, bg color.RGBA) {
+	ramp := r.pal.ramp(fg, bg)
+	ox, oy := r.pad+x*r.cw, r.pad+r.barH+y*r.ch
+	mask, cells := r.cellGlyph(x, c)
 	for py := range r.ch {
 		row := img.Pix[(oy+py)*img.Stride+ox:]
 		for px := range cells * r.cw {
@@ -467,9 +514,11 @@ func PNG(w io.Writer, c *cast.Cast, o Options) error {
 	if err != nil {
 		return err
 	}
+	r.fullColor = true
 	r.prepare([]*Screen{s})
 	img := r.render(s)
-	if len(r.images) > 0 { // pictures look better than a 256 color palette allows
+	// pictures, and more colors than a palette holds, need full color; else a palette is smaller
+	if r.pal.overflow || len(placements([]*Screen{s})) > 0 {
 		return png.Encode(w, r.trueColor(img, s))
 	}
 	return png.Encode(w, img)

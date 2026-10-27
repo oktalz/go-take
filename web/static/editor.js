@@ -1258,6 +1258,8 @@
     { name: 'gif', label: 'Animated GIF', kind: 'anim' },
     { name: 'svg', label: 'Animated SVG', kind: 'anim' },
     { name: 'html', label: 'HTML page (self-contained)', kind: 'html' },
+    { name: 'mp4', label: 'MP4 video (needs ffmpeg)', kind: 'anim' },
+    { name: 'webm', label: 'WebM video (needs ffmpeg)', kind: 'anim' },
     { name: 'png', label: 'PNG image', kind: 'still' },
     { name: 'svg-frame', label: 'SVG image', kind: 'still' },
     { name: 'txt', label: 'Text transcript', kind: 'text' },

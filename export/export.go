@@ -28,6 +28,8 @@ var Formats = []Format{
 	},
 	{Name: "png", Label: "PNG image (one frame)", Ext: ".png", ContentType: "image/png", Still: true},
 	{Name: "svg-frame", Label: "SVG image (one frame)", Ext: ".svg", ContentType: "image/svg+xml", Still: true},
+	{Name: "mp4", Label: "MP4 video (needs ffmpeg)", Ext: ".mp4", ContentType: "video/mp4"},
+	{Name: "webm", Label: "WebM video (needs ffmpeg)", Ext: ".webm", ContentType: "video/webm"},
 	{Name: "txt", Label: "Text transcript", Ext: ".txt", ContentType: "text/plain; charset=utf-8"},
 	{
 		Name: "screen", Label: "Screen text (one frame)", Ext: ".txt",
@@ -76,6 +78,8 @@ func Write(w io.Writer, f Format, c *cast.Cast, o Options, h HTMLOptions) error 
 		return PNG(w, c, o)
 	case "html":
 		return HTML(w, c, h)
+	case "mp4", "webm":
+		return Video(w, c, o, f.Name)
 	case "txt":
 		return Transcript(w, c)
 	case "screen":
