@@ -37,6 +37,7 @@
     '.gotake:focus-visible{box-shadow:0 0 0 2px var(--gotake-accent)}',
     '.gotake-viewport{position:relative;overflow:hidden;padding:10px 12px}',
     '.gotake-scaler{transform-origin:0 0;width:max-content}',
+    '.gotake .xterm-screen canvas.gotake-kitty{pointer-events:none}',
     '.gotake .xterm .xterm-viewport{overflow:hidden!important;background:transparent!important}',
     '.gotake .xterm-cursor-layer, .gotake .xterm-helpers{pointer-events:none}',
     '.gotake-overlay{position:absolute;inset:0 0 38px 0;display:flex;align-items:center;justify-content:center;cursor:pointer}',
@@ -275,6 +276,444 @@
     return e;
   }
 
+  // ---------------------------------------------------------------- kitty graphics
+
+  // Kitty graphics protocol: https://sw.kovidgoyal.net/kitty/graphics-protocol/
+  //
+  // Images come in APC sequences (ESC _ G keys ; base64 ESC \) and are shown at
+  // the cursor (direct placement) or through Unicode placeholders: U+10EEEE plus
+  // combining marks for the row and column of the image piece, with the image id
+  // as the foreground color. xterm.js knows neither, so, as gotake's exporter does,
+  // graphics commands are taken out of the output and every image cell becomes one
+  // character of Supplementary Private Use Area-B holding its row and column,
+  // colored with the id of what it shows. xterm.js keeps, scrolls and clears those
+  // cells like any text; a canvas over the terminal draws the image pieces on them.
+
+  var KITTY_PLACEHOLDER = 0x10EEEE;
+  var IMAGE_CELL = 0x100000;      // image cell: IMAGE_CELL + row * 256 + col
+  var IMAGE_CELL_MAX = 254;       // largest row and column an image cell holds
+  var ASSUMED_CELL = [8, 16];     // cell size in pixels when a placement gives no size
+  var DIRECT_IDS = 0xffffff;      // colors of direct placements count down from here
+  var NUMBERED_IDS = 0x80000000;  // ids of images sent with a number only
+  var KITTY_OSC = 5379;           // private OSC that runs a command where it was in the output
+  var MAX_PENDING = 256 << 20;
+  var DIACRITICS = [
+    0x305, 0x30D, 0x30E, 0x310, 0x312, 0x33D, 0x33E, 0x33F, 0x346, 0x34A, 0x34B, 0x34C, 0x350, 0x351, 0x352, 0x357,
+    0x35B, 0x363, 0x364, 0x365, 0x366, 0x367, 0x368, 0x369, 0x36A, 0x36B, 0x36C, 0x36D, 0x36E, 0x36F, 0x483, 0x484,
+    0x485, 0x486, 0x487, 0x592, 0x593, 0x594, 0x595, 0x597, 0x598, 0x599, 0x59C, 0x59D, 0x59E, 0x59F, 0x5A0, 0x5A1,
+    0x5A8, 0x5A9, 0x5AB, 0x5AC, 0x5AF, 0x5C4, 0x610, 0x611, 0x612, 0x613, 0x614, 0x615, 0x616, 0x617, 0x657, 0x658,
+    0x659, 0x65A, 0x65B, 0x65D, 0x65E, 0x6D6, 0x6D7, 0x6D8, 0x6D9, 0x6DA, 0x6DB, 0x6DC, 0x6DF, 0x6E0, 0x6E1, 0x6E2,
+    0x6E4, 0x6E7, 0x6E8, 0x6EB, 0x6EC, 0x730, 0x732, 0x733, 0x735, 0x736, 0x73A, 0x73D, 0x73F, 0x740, 0x741, 0x743,
+    0x745, 0x747, 0x749, 0x74A, 0x7EB, 0x7EC, 0x7ED, 0x7EE, 0x7EF, 0x7F0, 0x7F1, 0x7F3, 0x816, 0x817, 0x818, 0x819,
+    0x81B, 0x81C, 0x81D, 0x81E, 0x81F, 0x820, 0x821, 0x822, 0x823, 0x825, 0x826, 0x827, 0x829, 0x82A, 0x82B, 0x82C,
+    0x82D, 0x951, 0x953, 0x954, 0xF82, 0xF83, 0xF86, 0xF87, 0x135D, 0x135E, 0x135F, 0x17DD, 0x193A, 0x1A17, 0x1A75,
+    0x1A76, 0x1A77, 0x1A78, 0x1A79, 0x1A7A, 0x1A7B, 0x1A7C, 0x1B6B, 0x1B6D, 0x1B6E, 0x1B6F, 0x1B70, 0x1B71, 0x1B72,
+    0x1B73, 0x1CD0, 0x1CD1, 0x1CD2, 0x1CDA, 0x1CDB, 0x1CE0, 0x1DC0, 0x1DC1, 0x1DC3, 0x1DC4, 0x1DC5, 0x1DC6, 0x1DC7,
+    0x1DC8, 0x1DC9, 0x1DCB, 0x1DCC, 0x1DD1, 0x1DD2, 0x1DD3, 0x1DD4, 0x1DD5, 0x1DD6, 0x1DD7, 0x1DD8, 0x1DD9, 0x1DDA,
+    0x1DDB, 0x1DDC, 0x1DDD, 0x1DDE, 0x1DDF, 0x1DE0, 0x1DE1, 0x1DE2, 0x1DE3, 0x1DE4, 0x1DE5, 0x1DE6, 0x1DFE, 0x20D0,
+    0x20D1, 0x20D4, 0x20D5, 0x20D6, 0x20D7, 0x20DB, 0x20DC, 0x20E1, 0x20E7, 0x20E9, 0x20F0, 0x2CEF, 0x2CF0, 0x2CF1,
+    0x2DE0, 0x2DE1, 0x2DE2, 0x2DE3, 0x2DE4, 0x2DE5, 0x2DE6, 0x2DE7, 0x2DE8, 0x2DE9, 0x2DEA, 0x2DEB, 0x2DEC, 0x2DED,
+    0x2DEE, 0x2DEF, 0x2DF0, 0x2DF1, 0x2DF2, 0x2DF3, 0x2DF4, 0x2DF5, 0x2DF6, 0x2DF7, 0x2DF8, 0x2DF9, 0x2DFA, 0x2DFB,
+    0x2DFC, 0x2DFD, 0x2DFE, 0x2DFF, 0xA66F, 0xA67C, 0xA67D, 0xA6F0, 0xA6F1, 0xA8E0, 0xA8E1, 0xA8E2, 0xA8E3, 0xA8E4,
+    0xA8E5, 0xA8E6, 0xA8E7, 0xA8E8, 0xA8E9, 0xA8EA, 0xA8EB, 0xA8EC, 0xA8ED, 0xA8EE, 0xA8EF, 0xA8F0, 0xA8F1, 0xAAB0,
+    0xAAB2, 0xAAB3, 0xAAB7, 0xAAB8, 0xAABE, 0xAABF, 0xAAC1, 0xFE20, 0xFE21, 0xFE22, 0xFE23, 0xFE24, 0xFE25, 0xFE26,
+    0x10A0F, 0x10A38, 0x1D185, 0x1D186, 0x1D187, 0x1D188, 0x1D189, 0x1D1AA, 0x1D1AB, 0x1D1AC, 0x1D1AD, 0x1D242,
+    0x1D243, 0x1D244
+  ];
+  var DIACRITIC_INDEX = {};
+  DIACRITICS.forEach(function (r, i) { DIACRITIC_INDEX[r] = i; });
+
+  function imageCell(row, col) { return String.fromCodePoint(IMAGE_CELL + row * 256 + col); }
+
+  function parseKittyCmd(s) {
+    var semi = s.indexOf(';');
+    var head = semi < 0 ? s : s.slice(0, semi);
+    var c = { keys: {}, payload: semi < 0 ? '' : s.slice(semi + 1) };
+    head.split(',').forEach(function (kv) {
+      var eq = kv.indexOf('=');
+      if (eq === 1) c.keys[kv[0]] = kv.slice(2);
+    });
+    return c;
+  }
+  function kchar(c, k, def) { return c.keys[k] ? c.keys[k][0] : def; }
+  function knum(c, k) { return parseInt(c.keys[k], 10) || 0; }
+
+  function base64Bytes(s) {
+    var bin = atob(s);
+    var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  function inflate(bytes) {
+    var stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'));
+    return new Response(stream).arrayBuffer().then(function (b) { return new Uint8Array(b); });
+  }
+
+  // decodeImage turns a transmission into something canvas can draw.
+  function decodeImage(c, bytes) {
+    var f = knum(c, 'f') || 32, w = knum(c, 's'), h = knum(c, 'v');
+    var data = kchar(c, 'o', '') === 'z' ? inflate(bytes) : Promise.resolve(bytes);
+    return data.then(function (d) {
+      if (f === 100) return createImageBitmap(new Blob([d], { type: 'image/png' }));
+      var bpp = f === 24 ? 3 : 4;
+      if (w <= 0 || h <= 0 || d.length < w * h * bpp) throw new Error('short image data');
+      var px = new Uint8ClampedArray(w * h * 4);
+      for (var i = 0; i < w * h; i++) {
+        px[i * 4] = d[i * bpp]; px[i * 4 + 1] = d[i * bpp + 1]; px[i * 4 + 2] = d[i * bpp + 2];
+        px[i * 4 + 3] = bpp === 4 ? d[i * bpp + 3] : 255;
+      }
+      return createImageBitmap(new ImageData(px, w, h));
+    });
+  }
+
+  // pngSize reads the size from a PNG header, so placements can be sized before it is decoded.
+  function pngSize(b) {
+    if (b.length < 24 || b[12] !== 0x49 || b[13] !== 0x48) return [0, 0]; // IHDR
+    var be = function (i) { return ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0; };
+    return [be(16), be(20)];
+  }
+
+  /** Kitty graphics state of one terminal. cache keeps decoded images across rewinds. */
+  function Kitty(cache, onChange) {
+    this.cache = cache;
+    this.onChange = onChange;
+    this.seq = 0; // numbers commands run from the OSC handler; never reset
+    this.reset();
+  }
+
+  Kitty.prototype.reset = function () {
+    this.images = {};   // id -> image
+    this.numbers = {};  // image number (I) -> id
+    this.virtual = {};  // image id -> Unicode placeholder placement
+    this.direct = {};   // cell color -> direct placement
+    this.deferred = {}; // seq -> command that needs the screen
+    this.chunk = null;
+    this.data = '';
+    this.pending = '';
+    this.nextDir = DIRECT_IDS;
+    this.nextNum = NUMBERED_IDS;
+    this.row = -1;
+    this.col = 0;
+    this.used = false;  // anything was placed since the reset
+  };
+
+  /** What an image cell with color id shows. */
+  Kitty.prototype.placement = function (id) {
+    return this.direct[id] || this.virtual[id];
+  };
+
+  /** Take graphics commands out of output, returning what xterm.js should get. */
+  Kitty.prototype.filter = function (s) {
+    s = this.pending + s;
+    this.pending = '';
+    var out = '';
+    for (;;) {
+      var i = s.indexOf('\x1b_G');
+      if (i < 0) break;
+      out += this.text(s.slice(0, i));
+      s = s.slice(i);
+      var end = s.indexOf('\x1b', 3);
+      if (end < 0 || end === s.length - 1) { // not ended yet
+        if (s.length <= MAX_PENDING) this.pending = s;
+        return out;
+      }
+      if (s[end + 1] === '\\') {
+        out += this.command(s.slice(3, end));
+        end += 2;
+      }
+      s = s.slice(end); // a command cut short by another escape is dropped
+    }
+    var hold = /\x1b_?$/.exec(s);
+    if (hold) s = s.slice(0, hold.index);
+    out += this.text(s);
+    if (hold) this.pending = hold[0];
+    return out;
+  };
+
+  // text rewrites Unicode placeholders to image cells.
+  Kitty.prototype.text = function (s) {
+    if (s.indexOf('\x1bc') >= 0) this.reset(); // a full reset deletes all images
+    var ph = String.fromCodePoint(KITTY_PLACEHOLDER);
+    var i = s.indexOf(ph);
+    if (i < 0) return s;
+    var out = '';
+    while (i >= 0) {
+      out += s.slice(0, i);
+      s = s.slice(i + ph.length);
+      var marks = [];
+      while (marks.length < 3 && s.length) {
+        var cp = s.codePointAt(0), n = DIACRITIC_INDEX[cp];
+        if (n === undefined) break;
+        marks.push(n);
+        s = s.slice(cp > 0xffff ? 2 : 1);
+      }
+      // missing marks continue the placeholder to the left
+      var row = this.row, col = this.col + 1;
+      if (marks.length > 0 && marks[0] !== this.row) { row = marks[0]; col = 0; }
+      if (marks.length > 1) col = marks[1];
+      this.row = row; this.col = col;
+      out += row < 0 || row > IMAGE_CELL_MAX || col > IMAGE_CELL_MAX ? ' ' : imageCell(row, col);
+      i = s.indexOf(ph);
+    }
+    return out + s;
+  };
+
+  // command runs one graphics command, returning text that takes its place.
+  Kitty.prototype.command = function (s) {
+    var c = parseKittyCmd(s);
+    if (this.chunk) { // continuation: only m (and q) count
+      this.data += c.payload;
+      if (kchar(c, 'm', '0') === '1') return '';
+      c = this.chunk;
+      c.payload = this.data;
+      this.chunk = null;
+      this.data = '';
+    } else if (kchar(c, 'm', '0') === '1' && 'tTf'.indexOf(kchar(c, 'a', 't')) >= 0) {
+      this.chunk = c;
+      this.data = c.payload;
+      return '';
+    }
+    var id;
+    switch (kchar(c, 'a', 't')) {
+      case 't':
+        this.transmit(c);
+        return '';
+      case 'T':
+        id = this.transmit(c);
+        return id ? this.put(c, id) : '';
+      case 'p':
+        id = knum(c, 'i') || this.numbers[knum(c, 'I')];
+        return id ? this.put(c, id) : '';
+      case 'd':
+        return this.delete(c);
+      default: // queries and animation frames are not shown
+        return '';
+    }
+  };
+
+  // transmit stores an image, returning its id (0 when it cannot be shown).
+  Kitty.prototype.transmit = function (c) {
+    if (kchar(c, 't', 'd') !== 'd') return 0; // files and shared memory are not in the recording
+    var key = [c.keys.f, c.keys.o, c.keys.s, c.keys.v, c.payload].join(';');
+    var img = this.cache.get(key);
+    if (!img) {
+      var bytes;
+      try { bytes = base64Bytes(c.payload); } catch (e) { return 0; }
+      var raw = (knum(c, 'f') || 32) !== 100;
+      var size = raw ? [knum(c, 's'), knum(c, 'v')] : kchar(c, 'o', '') === 'z' ? [0, 0] : pngSize(bytes);
+      img = { w: size[0], h: size[1], src: null };
+      var onChange = this.onChange;
+      decodeImage(c, bytes).then(function (bmp) {
+        img.src = bmp;
+        img.w = bmp.width;
+        img.h = bmp.height;
+        onChange();
+      }).catch(function () { img.failed = true; });
+      this.cache.set(key, img);
+    }
+    var id = knum(c, 'i');
+    if (!id) {
+      id = this.nextNum++;
+      if (knum(c, 'I')) this.numbers[knum(c, 'I')] = id;
+    }
+    this.images[id] = img;
+    return id;
+  };
+
+  // put places image id: for Unicode placeholders (U=1) or as cells at the cursor.
+  Kitty.prototype.put = function (c, id) {
+    var img = this.images[id];
+    if (!img) return '';
+    var p = {
+      img: img, x: knum(c, 'x'), y: knum(c, 'y'), w: knum(c, 'w'), h: knum(c, 'h'),
+      cols: knum(c, 'c'), rows: knum(c, 'r'), imageID: id, id: knum(c, 'p'), z: knum(c, 'z'),
+      fit: 'stretch'
+    };
+    var w = p.w || img.w - p.x, h = p.h || img.h - p.y;
+    if (w > 0 && h > 0) {
+      if (p.cols && !p.rows) p.rows = Math.ceil(p.cols * ASSUMED_CELL[0] * h / (w * ASSUMED_CELL[1]));
+      else if (p.rows && !p.cols) p.cols = Math.ceil(p.rows * ASSUMED_CELL[1] * w / (h * ASSUMED_CELL[0]));
+      else if (!p.cols && !p.rows) {
+        p.cols = Math.ceil(w / ASSUMED_CELL[0]);
+        p.rows = Math.ceil(h / ASSUMED_CELL[1]);
+      }
+    }
+    p.cols = Math.min(Math.max(p.cols, 1), IMAGE_CELL_MAX + 1);
+    p.rows = Math.min(Math.max(p.rows, 1), IMAGE_CELL_MAX + 1);
+    this.used = true;
+    this.onChange();
+    if (knum(c, 'U') === 1) {
+      p.fit = 'center';
+      this.virtual[id] = p;
+      return '';
+    }
+    if (!knum(c, 'c') || !knum(c, 'r')) p.fit = 'top';
+    var color = this.nextDir--;
+    this.direct[color] = p;
+    return directCells(color, p, knum(c, 'C') === 1);
+  };
+
+  // directCells returns the text that draws a direct placement's cells at the
+  // cursor: first room is made (scrolling at the bottom), then each row is
+  // written from the saved top left corner with autowrap off, so the image is
+  // cut at the right edge. The cursor ends after the image, as in Kitty.
+  function directCells(color, p, stay) {
+    var sgr = '\x1b[0;38;2;' + (color >> 16 & 255) + ';' + (color >> 8 & 255) + ';' + (color & 255) + 'm';
+    var out = '';
+    if (p.rows > 1) out += '\x1bD'.repeat(p.rows - 1) + '\x1b[' + (p.rows - 1) + 'A';
+    out += '\x1b7\x1b[?7l';
+    for (var r = 0; r < p.rows; r++) {
+      out += '\x1b8' + (r ? '\x1b[' + r + 'B' : '') + sgr;
+      for (var c = 0; c < p.cols; c++) out += imageCell(r, c);
+    }
+    out += '\x1b[?7h\x1b8';
+    if (!stay) out += (p.rows > 1 ? '\x1b[' + (p.rows - 1) + 'B' : '') + '\x1b[' + p.cols + 'C';
+    return out;
+  }
+
+  // delete removes placements (lowercase d) and also the image data (uppercase d).
+  // Deletes by position run later, from the OSC handler, when the screen is there.
+  Kitty.prototype.delete = function (c) {
+    var d = kchar(c, 'd', 'a');
+    if ('cCpPqQxXyY'.indexOf(d) >= 0) {
+      var seq = ++this.seq;
+      this.deferred[seq] = c;
+      return '\x1b]' + KITTY_OSC + ';' + seq + '\x07';
+    }
+    var lower = d.toLowerCase(), pid = knum(c, 'p'), self = this;
+    var byImage = function (id) {
+      return function (p) { return p.imageID === id && (!pid || p.id === pid); };
+    };
+    var match;
+    switch (lower) {
+      case 'a': match = function () { return true; }; break;
+      case 'i': match = byImage(knum(c, 'i')); break;
+      case 'n': match = byImage(this.numbers[knum(c, 'I')]); break;
+      case 'r': match = function (p) { return p.imageID >= knum(c, 'x') && p.imageID <= knum(c, 'y'); }; break;
+      case 'z': match = function (p) { return p.z === knum(c, 'z'); }; break;
+      default: return '';
+    }
+    var removed = [];
+    var sweep = function (m) {
+      Object.keys(m).forEach(function (k) {
+        if (match(m[k])) { removed.push(m[k]); delete m[k]; }
+      });
+    };
+    sweep(this.direct);
+    if (lower !== 'a') sweep(this.virtual); // deleting all visible placements leaves the virtual ones
+    if (d !== lower) {
+      removed.forEach(function (p) { delete self.images[p.imageID]; });
+      if (d === 'I') delete this.images[knum(c, 'i')];
+      if (d === 'N') delete this.images[this.numbers[knum(c, 'I')]];
+    }
+    this.onChange();
+    return '';
+  };
+
+  /** Run a delete by position that the OSC with seq stands for, on xterm.js terminal term. */
+  Kitty.prototype.runDeferred = function (seq, term) {
+    var c = this.deferred[seq];
+    if (!c) return;
+    delete this.deferred[seq];
+    var d = kchar(c, 'd', 'a'), lower = d.toLowerCase();
+    var buf = term.buffer.active, cells = [];
+    var x, y;
+    if (lower === 'c') cells.push([buf.cursorX, buf.cursorY]);
+    else if (lower === 'p' || lower === 'q') cells.push([knum(c, 'x') - 1, knum(c, 'y') - 1]);
+    else if (lower === 'x') for (y = 0; y < term.rows; y++) cells.push([knum(c, 'x') - 1, y]);
+    else if (lower === 'y') for (x = 0; x < term.cols; x++) cells.push([x, knum(c, 'y') - 1]);
+    var cell = buf.getNullCell(), self = this;
+    cells.forEach(function (xy) {
+      if (xy[0] < 0 || xy[1] < 0 || xy[0] >= term.cols || xy[1] >= term.rows) return;
+      var line = buf.getLine(buf.viewportY + xy[1]);
+      if (!line || !line.getCell(xy[0], cell) || imageCellPos(cell.getChars()) === null) return;
+      var color = cell.getFgColor(), p = self.direct[color];
+      if (!p || (lower === 'q' && p.z !== knum(c, 'z'))) return;
+      delete self.direct[color];
+      if (d !== lower) delete self.images[p.imageID];
+    });
+    this.onChange();
+  };
+
+  // imageCellPos returns [row, col] of an image cell's characters, or null.
+  function imageCellPos(chars) {
+    if (!chars) return null;
+    var v = chars.codePointAt(0) - IMAGE_CELL;
+    if (v < 0 || v > IMAGE_CELL_MAX * 256 + IMAGE_CELL_MAX) return null;
+    return [v >> 8, v & 255];
+  }
+
+  // fitRect places an image of w x h pixels in a box of bw x bh.
+  function fitRect(fit, w, h, bw, bh) {
+    if (fit === 'stretch') return [0, 0, bw, bh];
+    var s = Math.min(bw / w, bh / h);
+    var sw = w * s, sh = h * s;
+    return fit === 'center' ? [(bw - sw) / 2, (bh - sh) / 2, sw, sh] : [0, 0, sw, sh];
+  }
+
+  // paletteColor returns the CSS color of xterm 256-color palette entry i.
+  function paletteColor(theme, i) {
+    if (i < 16) return theme[PALETTE_KEYS[i]] || DEFAULT_THEME[PALETTE_KEYS[i]];
+    if (i >= 232) {
+      var g = 8 + 10 * (i - 232);
+      return 'rgb(' + g + ',' + g + ',' + g + ')';
+    }
+    var levels = [0, 95, 135, 175, 215, 255];
+    i -= 16;
+    return 'rgb(' + levels[Math.floor(i / 36)] + ',' + levels[Math.floor(i / 6) % 6] + ',' + levels[i % 6] + ')';
+  }
+
+  function cellBackground(cell, theme) {
+    if (cell.isBgRGB()) return '#' + ('00000' + cell.getBgColor().toString(16)).slice(-6);
+    if (cell.isBgPalette()) return paletteColor(theme, cell.getBgColor());
+    return theme.background || DEFAULT_THEME.background;
+  }
+
+  /** Draw the image cells of xterm.js terminal term onto canvas, which covers its screen. */
+  function drawKitty(kitty, term, canvas, width, height) {
+    var dpr = global.devicePixelRatio || 1;
+    var cw = Math.round(width * dpr), ch = Math.round(height * dpr);
+    if (canvas.width !== cw || canvas.height !== ch) {
+      canvas.width = cw;
+      canvas.height = ch;
+      canvas.style.width = width + 'px';
+      canvas.style.height = height + 'px';
+    }
+    var ctx = canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cw, ch);
+    if (!kitty.used) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var sx = width / term.cols, sy = height / term.rows;
+    var buf = term.buffer.active, cell = buf.getNullCell(), theme = term.options.theme || DEFAULT_THEME;
+    for (var y = 0; y < term.rows; y++) {
+      var line = buf.getLine(buf.viewportY + y);
+      if (!line) continue;
+      for (var x = 0; x < term.cols; x++) {
+        if (!line.getCell(x, cell)) continue;
+        var pos = imageCellPos(cell.getChars());
+        if (!pos) continue;
+        // cover the character xterm.js drew, then the piece of the image
+        var x0 = Math.round(x * sx), y0 = Math.round(y * sy);
+        var x1 = Math.round((x + 1) * sx), y1 = Math.round((y + 1) * sy);
+        ctx.fillStyle = cellBackground(cell, theme);
+        ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+        var p = (cell.isFgRGB() || cell.isFgPalette()) && kitty.placement(cell.getFgColor());
+        if (!p || !p.img.src || pos[0] >= p.rows || pos[1] >= p.cols) continue;
+        var img = p.img, w = p.w || img.w - p.x, h = p.h || img.h - p.y;
+        if (w <= 0 || h <= 0) continue;
+        var f = fitRect(p.fit, w, h, p.cols * sx, p.rows * sy);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x0, y0, x1 - x0, y1 - y0);
+        ctx.clip();
+        ctx.drawImage(img.src, p.x, p.y, w, h, x * sx - pos[1] * sx + f[0], y * sy - pos[0] * sy + f[1], f[2], f[3]);
+        ctx.restore();
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- player
 
   /**
@@ -401,6 +840,13 @@
     });
     this.term.open(scaler);
     this._unscaleMouse();
+    this._kittyCache = this._kittyCache || new Map();
+    this.kitty = new Kitty(this._kittyCache, function () { self._kittyRedraw(); });
+    this.term.parser.registerOscHandler(KITTY_OSC, function (seq) {
+      self.kitty.runDeferred(+seq, self.term);
+      return true;
+    });
+    this.term.onRender(function () { self._kittyRedraw(); });
 
     if (global.ResizeObserver) {
       this._ro = new ResizeObserver(function () { self._fit(); });
@@ -564,7 +1010,7 @@
     while (this.index < this.events.length && this.events[this.index].t <= t) {
       var e = this.events[this.index++];
       if (e.code === 'o') {
-        buf += e.data;
+        buf += this.kitty.filter(e.data);
       } else if (e.code === 'r') {
         var m = /^(\d+)x(\d+)$/.exec(e.data);
         if (m) {
@@ -577,6 +1023,25 @@
       }
     }
     if (buf) term.write(buf);
+  };
+
+  // _kittyRedraw draws Kitty graphics on the next frame.
+  Player.prototype._kittyRedraw = function () {
+    var self = this;
+    if (this._kittyRaf) return;
+    this._kittyRaf = requestAnimationFrame(function () {
+      self._kittyRaf = 0;
+      var screen = self.scaler.querySelector('.xterm-screen');
+      if (!screen) return;
+      var canvas = self._kittyCanvas;
+      if (!self.kitty.used && !canvas) return;
+      if (!canvas || canvas.parentNode !== screen) {
+        canvas = self._kittyCanvas = document.createElement('canvas');
+        canvas.className = 'gotake-kitty';
+        screen.appendChild(canvas);
+      }
+      drawKitty(self.kitty, self.term, canvas, screen.offsetWidth, screen.offsetHeight);
+    });
   };
 
   Player.prototype._fitSoon = function () {
@@ -613,6 +1078,7 @@
       this._logo = false;
       this.term.resize(this.cols, this.rows);
       this.term.write('\x1bc\x1b[?25l');
+      this.kitty.reset();
       this.index = 0;
     }
     this.time = t;
