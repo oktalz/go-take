@@ -166,7 +166,13 @@ gotake marker  -at 0:42 -label "deploy" demo.take
 gotake caption -at 0:42 -text "Now we deploy" demo.take
 gotake replace -find 'zlatko@WSL' -replace 'demo' demo.take
 gotake redact  demo.take          # mask tokens, keys and password=... values with *
+gotake append  demo.take part2.take part3.take
 ```
+
+`append` adds recordings made in stages to the end of the first one, so they play as one take. All parts must have
+the same terminal size. Each part starts `-pause` seconds (default 0.5) after the previous one ends. Add `-clear` to
+start each part on a cleared screen. Otherwise it continues below the previous part's output, as if typed in the same
+terminal. A caption still showing at the end of a part is hidden. Markers keep their place within each part.
 
 `replace` matches visible text and keeps color codes. Replacing the user@host and the path separately keeps each
 part's color. Add `-raw` to also match inside escape sequences, such as the window title, and `-regex` for regular

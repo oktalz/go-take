@@ -54,6 +54,8 @@ Edit commands (modify FILE in place, or write to -o OUT):
   gotake marker  -at T [-label L] [FILE] add a marker / chapter
   gotake caption -at T -text TEXT [FILE] show a caption from T on (empty -text hides it)
   gotake trim-exit [FILE]               remove the exit / Ctrl-D at the end of a recording
+  gotake append  [-pause S] [-clear] FILE PART...
+                                        add recordings made in stages to the end of FILE
   gotake replace -find TEXT -replace TEXT [-regex] [-ignore-case] [-raw] [FILE]
                                         replace text in all output (e.g. a shell prompt)
   gotake redact  [-pattern REGEX] [FILE] mask secrets in output with * (default: common
@@ -98,6 +100,8 @@ func main() {
 		err = cmdCat(args)
 	case "convert":
 		err = cmdConvert(args)
+	case "append":
+		err = cmdAppend(args)
 	case "cut", "stretch", "speed", "idle", "typing", "inject", "pause", "marker", "caption", "replace", "redact",
 		"trim-exit":
 		err = cmdEditOp(cmd, args)
@@ -489,6 +493,45 @@ func cmdConvert(args []string) error {
 		return err
 	}
 	return c.Save(args[1])
+}
+
+func cmdAppend(args []string) error {
+	fs := flag.NewFlagSet("append", flag.ContinueOnError)
+	out := fs.String("o", "", "write result to this file instead of modifying FILE")
+	pause := fs.Float64("pause", 0.5, "pause in seconds before each appended part")
+	clearScreen := fs.Bool("clear", false, "clear the screen where each appended part starts")
+	pos, err := parseArgs(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) < 2 {
+		return errors.New("append: expected FILE and at least one PART")
+	}
+	path := withTakeExt(pos[0])
+	c, err := cast.Load(path)
+	if err != nil {
+		return err
+	}
+	before := c.Duration()
+	for _, p := range pos[1:] {
+		p = withTakeExt(p)
+		part, err := cast.Load(p)
+		if err != nil {
+			return err
+		}
+		if err := c.Append(part, cast.AppendOptions{Pause: *pause, Clear: *clearScreen}); err != nil {
+			return fmt.Errorf("%s: %w", p, err)
+		}
+	}
+	dst := path
+	if *out != "" {
+		dst = *out
+	}
+	if err := c.Save(dst); err != nil {
+		return err
+	}
+	eprintf("%s: %s -> %s, %d events\n", dst, fmtTime(before), fmtTime(c.Duration()), len(c.Events))
+	return nil
 }
 
 // printf writes to stdout; a failed write to the terminal is not actionable.
