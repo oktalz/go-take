@@ -33,7 +33,7 @@
   var CSS = [
     '.gotake{--gotake-bg:#121314;--gotake-fg:#d6d6d6;--gotake-accent:#e5a50a;--gotake-bar:rgba(18,19,20,.92);',
     'position:relative;display:block;max-width:100%;border-radius:8px;overflow:hidden;background:var(--gotake-bg);',
-    'font:13px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--gotake-fg);outline:none;user-select:none}',
+    'font:13px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--gotake-fg);text-align:left;outline:none;user-select:none}',
     '.gotake:focus-visible{box-shadow:0 0 0 2px var(--gotake-accent)}',
     '.gotake-viewport{position:relative;overflow:hidden;padding:10px 12px}',
     '.gotake-scaler{transform-origin:0 0;width:max-content}',
