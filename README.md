@@ -252,7 +252,9 @@ gotake serve -addr :8080 ./recordings   # gallery at /, script at /gotake-player
 ```
 
 Data attributes: `data-autoplay`, `data-loop`, `data-speed`, `data-idle-time-limit`, `data-start-at`, `data-stop-at`,
-`data-poster`, `data-font-size`, `data-fit="width|none"`, `data-controls="false"`.
+`data-poster`, `data-font-size`, `data-fit="width|contain|none"`, `data-controls="false"`.
+With `contain` the player fills its container and scales the terminal up or down to fit it, so give the container a
+height.
 
 Start, stop and poster take seconds or a marker label, so one recording can be embedded several times, one chapter
 each:

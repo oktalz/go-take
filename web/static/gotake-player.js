@@ -70,6 +70,9 @@
     '.gotake-tip[hidden]{display:none}',
     '.gotake:fullscreen{display:flex;flex-direction:column;justify-content:center;border-radius:0}',
     '.gotake:fullscreen .gotake-viewport{flex:1;display:flex;align-items:center;justify-content:center}',
+    '.gotake-contain{display:flex;flex-direction:column;height:100%}',
+    '.gotake-contain .gotake-viewport{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}',
+    '.gotake-contain .gotake-bar{flex:none}',
     '.gotake-error{padding:16px;color:#ff7b72;font:13px ui-monospace,monospace}'
   ].join('');
 
@@ -943,7 +946,8 @@
    *   where each time is seconds or the label of a marker. Playback pauses at stopAt (or
    *   loops back to startAt with loop); pressing play there continues past it.
    *   fontSize (15), fontFamily, lineHeight (1.15), theme (xterm theme object),
-   *   fit ('width' | 'none', default 'width'), controls (true), xtermBase, title.
+   *   fit ('width' | 'contain' | 'none', default 'width'; 'contain' scales up or down to fill
+   *   the container, which needs a height), controls (true), xtermBase, title.
    */
   function Player(container, opts) {
     this.opts = Object.assign({
@@ -974,7 +978,7 @@
   Player.prototype._build = function (Terminal) {
     injectCSS();
     var self = this;
-    var root = this.root = el('div', 'gotake');
+    var root = this.root = el('div', this.opts.fit === 'contain' ? 'gotake gotake-contain' : 'gotake');
     root.tabIndex = 0;
     var vp = this.viewport = el('div', 'gotake-viewport');
     var scaler = this.scaler = el('div', 'gotake-scaler');
@@ -1095,12 +1099,12 @@
       ev.__gotakeUnscaled = true;
     };
     this.scaler.addEventListener('mousedown', function (ev) { dragging = ev.button === 0; fix(ev); }, true);
-    global.addEventListener('mousemove', function (ev) {
-      if (dragging || self.scaler.contains(ev.target)) fix(ev);
-    }, true);
-    global.addEventListener('mouseup', function (ev) {
-      if (dragging) { fix(ev); dragging = false; }
-    }, true);
+    // kept so dispose() can take the window listeners off again
+    this._winListeners = {
+      mousemove: function (ev) { if (dragging || self.scaler.contains(ev.target)) fix(ev); },
+      mouseup: function (ev) { if (dragging) { fix(ev); dragging = false; } }
+    };
+    for (var name in this._winListeners) global.addEventListener(name, this._winListeners[name], true);
   };
 
   /** Text selected with the mouse in the terminal, or '' when nothing is selected. */
@@ -1144,9 +1148,9 @@
     var avail = this.viewport.clientWidth - 24;
     var scale = 1;
     if (this.opts.fit === 'width' && w > 0 && avail > 0) scale = Math.min(1, avail / w);
-    if (document.fullscreenElement === this.root) {
+    if (this.opts.fit === 'contain' || document.fullscreenElement === this.root) {
       var availH = this.viewport.clientHeight - 20;
-      scale = Math.min(avail / w, availH / h);
+      if (w > 0 && h > 0 && avail > 0 && availH > 0) scale = Math.min(avail / w, availH / h);
     }
     this._scale = scale;
     this.scaler.style.transform = scale === 1 ? '' : 'scale(' + scale + ')';
@@ -1399,10 +1403,15 @@
         self._applyUntil(end);
         self.playing = false;
         self._updateUI();
-        self._emit(end < self.duration ? 'stop' : 'ended');
+        // set before the event, so a handler that calls dispose() can still cancel it
         if (self.opts.loop) {
-          setTimeout(function () { self.seek(self.startTime()); self.play(); }, 1000);
+          self._loopTimer = setTimeout(function () {
+            self._loopTimer = 0;
+            self.seek(self.startTime());
+            self.play();
+          }, 1000);
         }
+        self._emit(end < self.duration ? 'stop' : 'ended');
         return;
       }
       self.time = t;
@@ -1432,7 +1441,10 @@
 
   Player.prototype.dispose = function () {
     this.pause();
+    clearTimeout(this._loopTimer);
     if (this._ro) this._ro.disconnect();
+    for (var name in this._winListeners) global.removeEventListener(name, this._winListeners[name], true);
+    this._winListeners = null;
     if (this.term) this.term.dispose();
     this.container.innerHTML = '';
   };
