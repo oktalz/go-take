@@ -19,7 +19,7 @@
 (function (global) {
   'use strict';
 
-  var XTERM_BASE = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0';
+  var XTERM_BASE = 'https://cdn.jsdelivr.net/npm/@xterm/xterm@6.0.0';
 
   var LOGO = [
     '              _        _',
@@ -39,6 +39,7 @@
     '.gotake-scaler{transform-origin:0 0;width:max-content}',
     '.gotake .xterm-screen canvas.gotake-kitty{pointer-events:none}',
     '.gotake .xterm .xterm-viewport{overflow:hidden!important;background:transparent!important}',
+    '.gotake .xterm-scrollable-element>.scrollbar{display:none!important}',
     '.gotake .xterm-cursor-layer, .gotake .xterm-helpers{pointer-events:none}',
     '.gotake-overlay{position:absolute;inset:0 0 38px 0;display:flex;align-items:center;justify-content:center;cursor:pointer}',
     '.gotake-overlay[hidden]{display:none}',
