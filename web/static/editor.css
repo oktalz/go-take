@@ -50,8 +50,10 @@ textarea { width: 100%; resize: vertical; }
 
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: calc(100% - 48px); }
 .left { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.preview { padding: 12px 14px 8px; display: flex; justify-content: center; }
-.preview > .gotake { width: 100%; max-width: min(1000px, 72vh); }
+.preview { flex: none; height: min(440px, 50vh); min-height: 100px; max-height: calc(100% - 200px); padding: 12px 14px 8px; }
+.splitter { flex: none; height: 7px; margin-top: -3px; cursor: row-resize; position: relative; outline: none; }
+.splitter::after { content: ""; position: absolute; left: 50%; top: 2px; width: 40px; height: 3px; margin-left: -20px; border-radius: 2px; background: var(--line); }
+.splitter:hover::after, .splitter:focus-visible::after, .splitter.dragging::after { background: var(--accent); }
 
 .timeline-wrap { padding: 4px 14px 8px; border-top: 1px solid var(--line); }
 .timeline-head { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; margin: 4px 0 6px; }

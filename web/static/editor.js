@@ -157,7 +157,7 @@
 
     var castObj = { header: S.header, events: S.events };
     if (!player) {
-      player = new GoTakePlayer.Player($('preview'), { idleTimeLimit: 0, fit: 'width', fontSize: 14 });
+      player = new GoTakePlayer.Player($('preview'), { idleTimeLimit: 0, fit: 'contain', fontSize: 14 });
       player.on('time', onPlayerTime);
       player.load(castObj).catch(function (e) { flash(e.message, true); });
     } else if (player.term) {
@@ -412,6 +412,44 @@
   }
 
   list.addEventListener('scroll', function () { requestAnimationFrame(renderList); });
+  // the list gets taller when the preview is made smaller
+  if (window.ResizeObserver) new ResizeObserver(function () { if (S) renderList(); }).observe(list);
+
+  // ------------------------------------------------------------ preview size
+
+  (function () {
+    var pv = $('preview'), sp = $('preview-split'), KEY = 'gotake.editor.previewHeight';
+    var set = function (h) { pv.style.height = h > 0 ? Math.round(h) + 'px' : ''; };
+    var keep = function () { localStorage.setItem(KEY, pv.offsetHeight); };
+    set(+localStorage.getItem(KEY));
+    sp.addEventListener('pointerdown', function (ev) {
+      if (ev.button !== 0) return;
+      ev.preventDefault();
+      sp.setPointerCapture(ev.pointerId);
+      sp.classList.add('dragging');
+      var y0 = ev.clientY, h0 = pv.offsetHeight;
+      var move = function (e) { set(h0 + e.clientY - y0); };
+      var up = function () {
+        sp.removeEventListener('pointermove', move);
+        sp.removeEventListener('pointerup', up);
+        sp.removeEventListener('pointercancel', up);
+        sp.classList.remove('dragging');
+        keep();
+      };
+      sp.addEventListener('pointermove', move);
+      sp.addEventListener('pointerup', up);
+      sp.addEventListener('pointercancel', up);
+    });
+    sp.addEventListener('dblclick', function () { localStorage.removeItem(KEY); set(0); });
+    sp.addEventListener('keydown', function (ev) {
+      var d = { ArrowUp: -20, ArrowDown: 20 }[ev.key];
+      if (!d) return;
+      ev.preventDefault();
+      ev.stopPropagation(); // not the list navigation
+      set(pv.offsetHeight + d);
+      keep();
+    });
+  })();
 
   // Selecting rows: click, Shift+click (or Ctrl/Cmd+click) to extend, or drag.
   // Dragging past the top or bottom edge scrolls the list.
