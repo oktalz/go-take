@@ -79,6 +79,7 @@ as it is, which suits regular expressions. `gotake run -h` lists everything.
 A recording made with `gotake rec demo` (the `.take` extension is added for you) looks like this:
 
 ```
+# https://github.com/oktalz/go-take
 gotake 1
 term 80x24 xterm-256color
 title "demo"
@@ -87,6 +88,7 @@ out    0.5 "\e[1;32m~/demo\e[0m $ "
 type   0.24 "ls --color" 0.097 0.071 0.072 0.076 0.098 0.101 0.06 0.086 0.091
 out    0.4 "\r\n"
 out    0.15 "\e[1;34mcast\e[0m  go.mod\r\n"
+# run the tests next
 marker 0 "tests"
 ```
 
@@ -99,8 +101,12 @@ marker 0 "tests"
   following key, or `every=0.08` for a steady speed. You can change the text without touching the delays. New
   characters get the average delay, and delays left over are ignored.
 - **`wait 2`** on its own line adds a 2 second pause before the next event.
+- **`# text`** on its own line is a comment. It keeps its place between the events when gotake saves the file, takes
+  no time and is not played. A `#` after other words on a line also starts a comment, but that one is not kept.
+- The first line is always the repository link comment. gotake writes it on every save and adds it to files that
+  lack it.
 - Strings use `\e`, `\r`, `\n`, `\t`, `\\`, `\"`, `\xHH` and `\uXXXX` escapes; `'single quoted'` strings are taken as
-  they are. `#` starts a comment, but comments are not kept when gotake saves the file.
+  they are.
 - `cell 9x18` in the header is the size of a terminal cell in pixels, recorded when the terminal reports it, so
   images are drawn at the size they had.
 
@@ -112,7 +118,8 @@ gotake export -f cast demo.take      # export asciicast v3 -> demo.cast (-f v2 f
 ```
 
 Commands work on `.cast` files too. A file named `*.cast` is read and saved as asciicast, and anything else is
-saved as `.take`.
+saved as `.take`. Comments are written to `.cast` files as `#` lines, but asciicast comments are not read
+back.
 
 ## Edit in the browser
 
@@ -134,15 +141,18 @@ gotake edit demo.take
   Tick *mask* to replace matches with `*` instead, keeping the layout; *Find secrets* finds common tokens, keys and
   `password=...` values to mask.
 - **Insert window** (right-click → Insert, or Ctrl+I): a floating, draggable window opened where you clicked. Its
-  tabs insert a typed command with output, raw output, a marker or a pause, before or after the selection. If the
+  tabs insert a typed command with output, raw output, a marker, a caption, a comment or a pause, before or after the
+  selection. If the
   screen already shows a prompt at that point, the command is typed at it and the same prompt is printed again
   afterwards. Ctrl+Enter inserts and Esc closes.
 - **Inject command**: types a command character by character after a prompt, then prints its output line by line.
 - **Theme**: color pickers for text, background and the 16 palette colors, a few presets (Dracula, Solarized dark,
   Light), and a transparent background. The theme is saved in the recording and used by the player and by
   GIF/SVG/PNG export. A transparent GIF stores every frame whole, so it is several times larger.
-- **Insert**: raw output (with `\r\n`, `\e[31m` escapes), markers (chapters shown on the player's progress bar) or a
-  clear screen.
+- **Insert**: raw output (with `\r\n`, `\e[31m` escapes), markers (chapters shown on the player's progress bar),
+  comments (`# …` lines kept in the file, not played) or a clear screen.
+- **Comments** show in the event list as green `# …` rows. The repository link on the file's first line is shown as a
+  fixed row above the list and cannot be removed. Opening a `.take` file without it enables Save, which adds it.
 - **Event**: edit a single event's delay, type and data. Double-click a delay cell to edit it inline.
 - **Right-click menus** on event rows, the timeline, the preview and everywhere else. They cover play from here,
   set delay, speed up or slow down, insert pause or marker, cut/copy/paste, find similar text, zoom, playback speed
@@ -164,6 +174,7 @@ gotake inject  -at 0:30 -cmd "kubectl get pods" -output-file pods.txt demo.take
 gotake pause   -at 0:42 -seconds 2 demo.take
 gotake marker  -at 0:42 -label "deploy" demo.take
 gotake caption -at 0:42 -text "Now we deploy" demo.take
+gotake comment -at 0:42 -text "deploy starts here" demo.take
 gotake replace -find 'zlatko@WSL' -replace 'demo' demo.take
 gotake redact  demo.take          # mask tokens, keys and password=... values with *
 gotake append  demo.take part2.take part3.take
