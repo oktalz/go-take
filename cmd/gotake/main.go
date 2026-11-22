@@ -53,6 +53,7 @@ Edit commands (modify FILE in place, or write to -o OUT):
   gotake pause   -at T -seconds S [FILE] insert a pause
   gotake marker  -at T [-label L] [FILE] add a marker / chapter
   gotake caption -at T -text TEXT [FILE] show a caption from T on (empty -text hides it)
+  gotake comment -at T -text TEXT [FILE] add a "# TEXT" comment line (\n makes several)
   gotake trim-exit [FILE]               remove the exit / Ctrl-D at the end of a recording
   gotake append  [-pause S] [-clear] FILE PART...
                                         add recordings made in stages to the end of FILE
@@ -102,8 +103,8 @@ func main() {
 		err = cmdConvert(args)
 	case "append":
 		err = cmdAppend(args)
-	case "cut", "stretch", "speed", "idle", "typing", "inject", "pause", "marker", "caption", "replace", "redact",
-		"trim-exit":
+	case "cut", "stretch", "speed", "idle", "typing", "inject", "pause", "marker", "caption", "comment",
+		"replace", "redact", "trim-exit":
 		err = cmdEditOp(cmd, args)
 	case "version", "-v", "--version":
 		fmt.Println("gotake", version.Version)

@@ -268,6 +268,16 @@ func (e *takeEncoder) writeSingle(ev Event) {
 	}
 }
 
+// CommentEvents returns comment events for text, one per line of it.
+func CommentEvents(text string) []Event {
+	lines := strings.Split(strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(text), "\n")
+	evs := make([]Event, len(lines))
+	for i, l := range lines {
+		evs[i] = Event{Code: Comment, Data: l}
+	}
+	return evs
+}
+
 // commentLines returns comment text as "# text" lines, one per line of text.
 func commentLines(text string) []string {
 	text = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(text)

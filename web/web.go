@@ -181,12 +181,7 @@ func Apply(c *cast.Cast, r OpRequest) (string, error) {
 		c.Insert(r.At, cast.Event{Code: cast.Marker, Data: r.Label})
 		return "", nil
 	case "comment":
-		lines := strings.Split(strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(r.Label), "\n")
-		evs := make([]cast.Event, len(lines))
-		for i, l := range lines {
-			evs[i] = cast.Event{Code: cast.Comment, Data: l}
-		}
-		c.Insert(r.At, evs...)
+		c.Insert(r.At, cast.CommentEvents(r.Label)...)
 		return "", nil
 	case "trim_exit":
 		if n := c.TrimExit(); n > 0 {

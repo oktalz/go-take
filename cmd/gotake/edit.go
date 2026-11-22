@@ -139,6 +139,13 @@ var editCmds = map[string]editCmd{
 		c.Insert(c.IndexAt(f.at.v), cast.Event{Code: cast.Caption, Data: unescape(f.text)})
 		return nil
 	}},
+	"comment": {position: "at", run: func(c *cast.Cast, f *editFlags) error {
+		if f.text == "" {
+			return errors.New("comment: -text is required")
+		}
+		c.Insert(c.IndexAt(f.at.v), cast.CommentEvents(unescape(f.text))...)
+		return nil
+	}},
 	"redact": {position: "range", run: func(c *cast.Cast, f *editFlags) error {
 		from, to := f.span(c)
 		m, ev, err := c.Replace(from, to, cast.ReplaceOptions{
@@ -209,7 +216,7 @@ func cmdEditOp(name string, args []string) error {
 	fs.Float64Var(&f.jitter, "jitter", 0.03, "random variation of keystroke delay")
 	fs.Float64Var(&f.seconds, "seconds", 1, "pause length in seconds")
 	fs.StringVar(&f.label, "label", "", "marker label")
-	fs.StringVar(&f.text, "text", "", "caption text (\\n line breaks; empty hides the caption)")
+	fs.StringVar(&f.text, "text", "", "caption or comment text (\\n line breaks; an empty caption hides it)")
 	fs.StringVar(&f.prompt, "prompt", "$ ", "prompt printed before the command")
 	fs.StringVar(&f.command, "cmd", "", "command to type")
 	fs.StringVar(&f.output, "output", "", "command output (\\n line breaks)")
