@@ -54,6 +54,9 @@ const (
 // TakeExt is the file extension of the .take format.
 const TakeExt = ".take"
 
+// TakeRepoURL is the repository link written as a comment at the top of .take files.
+const TakeRepoURL = "https://github.com/oktalz/go-take"
+
 // FormatFor picks the format from a file name: .cast is asciicast, anything else is .take.
 func FormatFor(path string) Format {
 	if strings.EqualFold(filepath.Ext(path), ".cast") {
@@ -107,6 +110,7 @@ type takeEncoder struct {
 }
 
 func (e *takeEncoder) WriteHeader(h Header) error {
+	e.line("# " + TakeRepoURL)
 	e.line("gotake", "1")
 	size := strconv.Itoa(h.Term.Cols) + "x" + strconv.Itoa(h.Term.Rows)
 	if h.Term.Type != "" {

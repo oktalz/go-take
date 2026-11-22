@@ -60,7 +60,8 @@ func TestTakeRoundTripFiles(t *testing.T) {
 func TestTakeGroupsTyping(t *testing.T) {
 	c := mustRead(t, v3)
 	got := writeTake(t, c)
-	want := `gotake 1
+	want := "# " + TakeRepoURL + `
+gotake 1
 term 80x24
 
 out    0.5 "$ "
@@ -157,7 +158,12 @@ func TestTakeErrors(t *testing.T) {
 func TestSaveFormatFromExtension(t *testing.T) {
 	dir := t.TempDir()
 	c := mustRead(t, v3)
-	for name, prefix := range map[string]string{"a.take": "gotake 1", "a.cast": `{"version":3`, "a": "gotake 1"} {
+	cases := map[string]string{
+		"a.take": "# " + TakeRepoURL,
+		"a.cast": `{"version":3`,
+		"a":      "# " + TakeRepoURL,
+	}
+	for name, prefix := range cases {
 		p := filepath.Join(dir, name)
 		if err := c.Save(p); err != nil {
 			t.Fatal(err)
