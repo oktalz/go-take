@@ -5,7 +5,8 @@
 // in asciicast v3 (https://docs.asciinema.org/manual/asciicast/v3/) for import
 // and export: newline-delimited JSON where the first line is a header object
 // and every following line is an event `[delay, code, data]`. Lines starting
-// with '#' are comments and are ignored.
+// with '#' are comments and are ignored when reading; Comment events are
+// written as such lines.
 //
 // asciicast v2 files (absolute timestamps) can be read and are converted on load.
 package cast
@@ -34,6 +35,9 @@ const (
 	// Caption is text shown over the terminal until the next caption; an
 	// empty one hides it (gotake extension).
 	Caption = "c"
+	// Comment is a note kept in the file, written as its own "# text" line.
+	// Players and exports skip it (gotake extension).
+	Comment = "#"
 )
 
 // Theme is the terminal color theme.

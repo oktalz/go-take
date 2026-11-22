@@ -144,6 +144,8 @@
     if (viewFit) view = { start: 0, end: Math.max(S.duration, 1) };
 
     $('path').textContent = S.path;
+    $('repo-row').hidden = !S.repo_url;
+    if (S.repo_url) { $('repo-link').href = S.repo_url; $('repo-link').textContent = S.repo_url; }
     $('dirty').hidden = !S.dirty;
     $('btn-save').disabled = !S.dirty;
     $('btn-save').title = S.dirty ? 'Save (Ctrl+S)' : 'No changes to save';
@@ -362,6 +364,11 @@
       var r = range(), at = r ? r[0] : Math.max(0, cur + 1);
       run({ op: 'marker', at: at, label: $('in-marker').value }, function () { selectRange(at, at + 1); });
     },
+    comment: function () {
+      var text = $('in-comment').value;
+      var r = range(), at = r ? r[1] : Math.max(0, cur + 1);
+      run({ op: 'comment', at: at, label: text }, function (n) { selectRange(at, at + n); });
+    },
     replace: function () {
       var o = findOptions();
       if (!o.find) { flash('Enter the text to find.', true); $('in-find').focus(); return; }
@@ -394,16 +401,17 @@
     var html = '';
     for (var i = first; i < last; i++) {
       var e = S.events[i];
-      var cls = 'row' + (i >= r[0] && i < r[1] ? ' sel' : '') + (i === cur ? ' cur' : '') + (found.set.has(i) ? ' match' : '');
+      var isComment = e[1] === '#';
+      var cls = 'row' + (isComment ? ' comment' : '') + (i >= r[0] && i < r[1] ? ' sel' : '') + (i === cur ? ' cur' : '') + (found.set.has(i) ? ' match' : '');
       var d = e[0];
       var dcls = d >= 1 ? ' long' : d >= 0.3 ? ' mid' : '';
-      var ccls = e[1] === 'o' && keys[i] ? 'key' : e[1];
+      var ccls = e[1] === 'o' && keys[i] ? 'key' : isComment ? 'cm' : e[1];
       html += '<div class="' + cls + '" data-i="' + i + '" style="top:' + (i * ROW) + 'px">' +
         '<span class="c-idx">' + i + '</span>' +
         '<span class="c-time">' + fmt(times[i]) + '</span>' +
         '<span class="c-delay' + dcls + '" title="double-click to edit">' + fmtDelay(d) + '</span>' +
         '<span class="c-code"><span class="code ' + ccls + '">' + escHTML(e[1]) + '</span></span>' +
-        '<span class="c-data">' + showData(e[2]) + '</span></div>';
+        '<span class="c-data">' + (isComment ? '# ' : '') + showData(e[2]) + '</span></div>';
     }
     // keep the spacer, replace rows
     list.innerHTML = '';
@@ -559,7 +567,7 @@
   var css = getComputedStyle(document.documentElement);
   var color = function (name) { return css.getPropertyValue(name).trim(); };
   var C = {
-    o: color('--k-o'), key: color('--k-key'), i: color('--k-i'), m: color('--k-m'), r: color('--k-r'), c: color('--k-c'),
+    o: color('--k-o'), key: color('--k-key'), i: color('--k-i'), m: color('--k-m'), r: color('--k-r'), c: color('--k-c'), '#': color('--k-cm'),
     x: color('--danger'), sel: color('--sel'), selLine: color('--sel-line'), accent: color('--accent'),
     muted: color('--muted'), line: color('--line')
   };
@@ -604,6 +612,10 @@
       var e = S.events[i], x = Math.round(tx(t, W)) + 0.5;
       var kind = e[1] === 'o' && keys[i] ? 'key' : e[1];
       ctx.fillStyle = C[kind] || C.o;
+      if (e[1] === '#') { // comments take no time: a short tick at the top
+        ctx.fillRect(x - 0.5, 0, 1.5, 6);
+        continue;
+      }
       if (e[1] === 'm') {
         ctx.fillRect(x - 0.5, 0, 1.5, bottom);
         if (e[2]) {
@@ -732,7 +744,8 @@
       '<div class="field"><label>Delay (s)</label><input id="ev-delay" type="number" step="0.01" min="0"></div>' +
       '<div class="field"><label>Type</label><select id="ev-code">' +
       '<option value="o">o — output</option><option value="i">i — input</option><option value="m">m — marker</option>' +
-      '<option value="r">r — resize</option><option value="x">x — exit</option></select></div>' +
+      '<option value="r">r — resize</option><option value="x">x — exit</option>' +
+      '<option value="c">c — caption</option><option value="#"># — comment</option></select></div>' +
       '<label class="block">Data <span class="muted">(\\r \\n \\e \\xHH \\uHHHH)</span></label>' +
       '<textarea id="ev-data" rows="5" spellcheck="false"></textarea>' +
       '<div class="field"><span style="flex:1"></span><button id="ev-apply">Apply</button></div>';
@@ -1461,7 +1474,7 @@
       '<div class="fw-head"><span class="fw-title">Insert</span><span class="fw-where"></span>' +
       '<button type="button" class="fw-close" title="Close (Esc)" aria-label="Close">×</button></div>' +
       '<div class="fw-tabs" role="tablist">' +
-      ['command', 'output', 'marker', 'caption', 'pause'].map(function (t) {
+      ['command', 'output', 'marker', 'caption', 'comment', 'pause'].map(function (t) {
         return '<button type="button" role="tab" data-tab="' + t + '">' + t[0].toUpperCase() + t.slice(1) + '</button>';
       }).join('') + '</div>' +
       '<form class="fw-body">' +
@@ -1490,6 +1503,10 @@
       '  <p class="note">Shown over the terminal until the next caption; insert an empty one to hide it. ' +
       'The player and GIF/SVG/PNG exports draw captions.</p>' +
       '</section>' +
+      '<section data-pane="comment">' +
+      '  <label class="block">Text</label><textarea name="comment" rows="4" spellcheck="false" placeholder="a note for whoever edits this file"></textarea>' +
+      '  <p class="note">Saved as separate <code># …</code> lines in the file, one per line of text. Comments take no time and are not played.</p>' +
+      '</section>' +
       '<section data-pane="pause">' +
       '  <div class="field"><label>Seconds</label><input name="seconds" type="number" step="0.1" min="0" value="1"></div>' +
       '  <div class="fw-chips">' + [0.5, 1, 2, 3, 5].map(function (s) { return '<button type="button" data-sec="' + s + '">' + s + ' s</button>'; }).join('') + '</div>' +
@@ -1505,7 +1522,7 @@
     var form = w.querySelector('form');
     // a command or output goes before the selection by default, a marker or pause after
     // it; once Before or After is clicked, switching tabs keeps that choice
-    var TAB_SIDE = { command: 'before', output: 'before', marker: 'after', caption: 'before', pause: 'after' };
+    var TAB_SIDE = { command: 'before', output: 'before', marker: 'after', caption: 'before', comment: 'before', pause: 'after' };
     var side = TAB_SIDE[tab] || 'after', sideChosen = false;
     var at = function () { return hasSel ? (side === 'before' ? pos.before : pos.after) : pos.at; };
     var field = function (n) { return form.elements[n]; };
@@ -1552,7 +1569,7 @@
       w.querySelectorAll('[data-pane]').forEach(function (p) { p.hidden = p.dataset.pane !== t; });
       if (hasSel && !sideChosen && TAB_SIDE[t] !== side) setSide(TAB_SIDE[t]);
       estimate();
-      var first = { command: 'command', output: 'text', marker: 'label', pause: 'seconds' }[t];
+      var first = { command: 'command', output: 'text', marker: 'label', caption: 'caption', comment: 'comment', pause: 'seconds' }[t];
       setTimeout(function () { field(first).focus(); field(first).select && field(first).select(); }, 0);
     };
 
@@ -1592,6 +1609,8 @@
         req = { op: 'insert', at: i, events: parts.map(function (p, k) { return [k === 0 ? d : 0.05, 'o', p]; }) };
       } else if (t === 'marker') {
         req = { op: 'marker', at: i, label: field('label').value };
+      } else if (t === 'comment') {
+        req = { op: 'comment', at: i, label: field('comment').value };
       } else if (t === 'caption') {
         req = { op: 'insert', at: i, events: [[0, 'c', field('caption').value]] };
       } else {
@@ -1654,6 +1673,7 @@
       { label: 'Command…', kbd: 'Ctrl+I', action: open('command') },
       { label: 'Output text…', action: open('output') },
       { label: 'Marker…', action: open('marker') },
+      { label: 'Comment…', action: open('comment') },
       { label: 'Pause…', action: open('pause') }
     ].concat({ sep: true }, clear);
   }

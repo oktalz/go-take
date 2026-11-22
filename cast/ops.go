@@ -298,7 +298,7 @@ func (c *Cast) NormalizeTyping(from, to int, opts TypingOptions) (int, error) {
 			changed++
 		case key:
 			inRun = true
-		case e.Code == Marker || e.Code == Resize:
+		case e.Code == Marker || e.Code == Resize || e.Code == Comment:
 		default:
 			inRun = false
 		}

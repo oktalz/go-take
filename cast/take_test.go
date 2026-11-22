@@ -99,6 +99,7 @@ event  0.5 x-custom "data"
 		t.Fatalf("header: %+v", h)
 	}
 	want := []Event{
+		{Code: Comment, Data: "my demo"},
 		{Code: Output, Data: "\x1b[32m$\x1b[0m "},
 		{Delay: 0.5, Code: Output, Data: "a"},
 		{Delay: 0.08, Code: Output, Data: "b"},
@@ -214,4 +215,68 @@ func TestTakeCaption(t *testing.T) {
 		t.Fatal(err)
 	}
 	sameEvents(t, c.Events, back.Events)
+}
+
+func TestTakeComments(t *testing.T) {
+	in := "# " + TakeRepoURL + `
+# written by hand
+gotake 1
+term 80x24
+
+out    0.5 "$ "
+# between events
+type   0.2 "ls" 0.1   # trailing comments are not kept
+#
+#   indented
+out    0.4 "\r\n"
+`
+	c := mustRead(t, in)
+	want := []Event{
+		{Code: Comment, Data: "written by hand"},
+		{Delay: 0.5, Code: Output, Data: "$ "},
+		{Code: Comment, Data: "between events"},
+		{Delay: 0.2, Code: Output, Data: "l"},
+		{Delay: 0.1, Code: Output, Data: "s"},
+		{Code: Comment, Data: ""},
+		{Code: Comment, Data: "  indented"},
+		{Delay: 0.4, Code: Output, Data: "\r\n"},
+	}
+	sameEvents(t, want, c.Events)
+
+	out := writeTake(t, c)
+	if strings.Count(out, TakeRepoURL) != 1 || !strings.HasPrefix(out, "# "+TakeRepoURL+"\n") {
+		t.Fatalf("repository link must be the first line, once:\n%s", out)
+	}
+	for _, line := range []string{"\n# written by hand\n", "\n# between events\n", "\n#\n", "\n#   indented\n"} {
+		if !strings.Contains(out, line) {
+			t.Fatalf("missing %q in:\n%s", line, out)
+		}
+	}
+	sameEvents(t, c.Events, mustRead(t, out).Events)
+}
+
+func TestCommentWriting(t *testing.T) {
+	c := New(80, 24)
+	c.Events = []Event{
+		{Delay: 0.5, Code: Comment, Data: "two\r\nlines"},
+		{Delay: 0.25, Code: Output, Data: "x"},
+	}
+	out := writeTake(t, c)
+	if !strings.Contains(out, "wait   0.5\n# two\n# lines\nout    0.25 \"x\"\n") {
+		t.Fatalf("unexpected .take:\n%s", out)
+	}
+	got := mustRead(t, out)
+	if d := got.Duration(); !near(d, 0.75) {
+		t.Fatalf("duration %v, want 0.75", d)
+	}
+
+	var buf bytes.Buffer
+	if err := c.Write(&buf, FormatAsciicast); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "\n# two\n# lines\n[0.75, \"o\", \"x\"]\n") {
+		t.Fatalf("unexpected asciicast:\n%s", buf.String())
+	}
+	// asciicast comments are not read back, the timing stays
+	sameEvents(t, []Event{{Delay: 0.75, Code: Output, Data: "x"}}, mustRead(t, buf.String()).Events)
 }

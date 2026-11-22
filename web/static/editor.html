@@ -36,7 +36,7 @@
       <canvas id="timeline" height="84"></canvas>
       <div class="legend">
         <span><i class="k-o"></i>output</span><span><i class="k-key"></i>keystroke</span>
-        <span><i class="k-i"></i>input</span><span><i class="k-m"></i>marker</span><span><i class="k-r"></i>resize</span>
+        <span><i class="k-i"></i>input</span><span><i class="k-m"></i>marker</span><span><i class="k-r"></i>resize</span><span><i class="k-cm"></i>comment</span>
       </div>
     </div>
 
@@ -44,6 +44,10 @@
       <div class="list-head row">
         <span class="c-idx">#</span><span class="c-time">time</span><span class="c-delay">delay</span>
         <span class="c-code">type</span><span class="c-data">data</span>
+      </div>
+      <div class="row pinned" id="repo-row" hidden title="Always written as the first line of a .take file. It cannot be edited or removed.">
+        <span class="c-idx" aria-label="locked">🔒</span><span class="c-time"></span><span class="c-delay"></span>
+        <span class="c-code"><span class="code cm">#</span></span><span class="c-data"><a id="repo-link" target="_blank" rel="noopener"></a><span class="muted"> · fixed first line</span></span>
       </div>
       <div class="list" id="list" tabindex="0"><div class="list-spacer" id="list-spacer"></div></div>
     </div>
@@ -119,6 +123,8 @@
       <textarea id="in-text" rows="3" spellcheck="false" placeholder="Hello\r\n"></textarea>
       <div class="field"><label>Delay (s)</label><input id="in-text-delay" type="number" step="0.01" min="0" value="0.1"><button data-op="insert_text">Insert after</button></div>
       <div class="field"><label>Marker</label><input id="in-marker" type="text" placeholder="chapter label"><button data-op="marker">Add</button></div>
+      <div class="field"><label>Comment</label><input id="in-comment" type="text" placeholder="note for the file" spellcheck="false"><button data-op="comment">Add</button></div>
+      <p class="note">Comments are saved as separate <code># …</code> lines in the file. They take no time and are not played.</p>
     </details>
 
     <details id="event-panel">
@@ -182,7 +188,7 @@
         <dt>Esc</dt><dd>clear selection</dd>
         <dt>Del</dt><dd>delete selection</dd>
         <dt>Ctrl+D</dt><dd>duplicate selection</dd>
-        <dt>Ctrl+I</dt><dd>insert window (command, output, marker, pause)</dd>
+        <dt>Ctrl+I</dt><dd>insert window (command, output, marker, comment, pause)</dd>
         <dt>Ctrl+X / C / V</dt><dd>cut / copy / paste events</dd>
         <dt>Right-click</dt><dd>menu for rows, timeline, preview</dd>
         <dt>Menu / Shift+F10</dt><dd>menu for the selection</dd>

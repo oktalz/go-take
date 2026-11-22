@@ -15,6 +15,7 @@
   --k-m: #f2f2f2;
   --k-c: #f0a8d0;
   --k-r: #c678dd;
+  --k-cm: #7fb77e;
   --sel: rgba(229, 165, 10, .16);
   --sel-line: rgba(229, 165, 10, .55);
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -62,7 +63,7 @@ textarea { width: 100%; resize: vertical; }
 #timeline { width: 100%; height: 84px; display: block; border-radius: 4px; background: var(--panel); cursor: crosshair; }
 .legend { display: flex; gap: 14px; font-size: 11px; color: var(--muted); margin-top: 5px; }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: -0.5px; }
-.k-o { background: var(--k-o); } .k-key { background: var(--k-key); } .k-i { background: var(--k-i); } .k-m { background: var(--k-m); } .k-r { background: var(--k-r); }
+.k-o { background: var(--k-o); } .k-key { background: var(--k-key); } .k-i { background: var(--k-i); } .k-m { background: var(--k-m); } .k-r { background: var(--k-r); } .k-cm { background: var(--k-cm); }
 
 .list-wrap { flex: 1; min-height: 120px; display: flex; flex-direction: column; border-top: 1px solid var(--line); }
 .row { display: grid; grid-template-columns: 64px 84px 84px 44px minmax(0, 1fr); align-items: center; height: 24px; padding: 0 14px; gap: 8px; font: 12px var(--mono); }
@@ -82,6 +83,14 @@ textarea { width: 100%; resize: vertical; }
 .code { display: inline-block; min-width: 18px; padding: 0 4px; border-radius: 3px; font-weight: 700; font-size: 11px; color: #0e0f10; }
 .code.o { background: var(--k-o); } .code.key { background: var(--k-key); } .code.i { background: var(--k-i); }
 .code.m { background: var(--k-m); } .code.c { background: var(--k-c); } .code.r { background: var(--k-r); } .code.x { background: var(--danger); }
+.code.cm { background: var(--k-cm); }
+.row.comment .c-data, .row.pinned .c-data { color: var(--k-cm); font-style: italic; }
+.row.comment .c-time, .row.comment .c-delay { opacity: .45; }
+.row.pinned { flex: none; background: var(--panel); border-bottom: 1px solid var(--line); border-left: 2px solid transparent; cursor: default; }
+.row.pinned[hidden] { display: none; }
+.row.pinned .c-idx { font-size: 11px; }
+.row.pinned a { color: inherit; }
+.row.pinned .muted { font-style: normal; }
 .c-data { overflow: hidden; white-space: pre; text-overflow: ellipsis; }
 .c-data .esc { color: var(--muted); }
 .c-delay input { width: 100%; text-align: right; padding: 1px 4px; height: 20px; }

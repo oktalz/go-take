@@ -68,7 +68,10 @@ type state struct {
 	Path    string `json:"path"`
 	Message string `json:"message,omitempty"`
 	// Secrets is the regular expression of the editor's "Find secrets" button.
-	Secrets  string       `json:"secrets"`
+	Secrets string `json:"secrets"`
+	// RepoURL is the comment always written on the first line of a .take file;
+	// the editor shows it as a fixed row that cannot be removed. Empty for .cast files.
+	RepoURL  string       `json:"repo_url,omitempty"`
 	Header   cast.Header  `json:"header"`
 	Events   []cast.Event `json:"events"`
 	Version  int          `json:"version"`
@@ -83,8 +86,12 @@ func (ed *Editor) state(msg string) state {
 	if ev == nil {
 		ev = []cast.Event{}
 	}
+	repo := ""
+	if cast.FormatFor(ed.path) == cast.FormatTake {
+		repo = cast.TakeRepoURL
+	}
 	return state{
-		Path: ed.path, Header: ed.cast.Header, Events: ev, Version: ed.version,
+		RepoURL: repo, Path: ed.path, Header: ed.cast.Header, Events: ev, Version: ed.version,
 		Dirty: ed.version != ed.saved, CanUndo: len(ed.undo) > 0, CanRedo: len(ed.redo) > 0,
 		Duration: ed.cast.Duration(), Message: msg, Secrets: cast.SecretPattern,
 	}
@@ -155,6 +162,14 @@ func Apply(c *cast.Cast, r OpRequest) (string, error) {
 		return "", c.Split(r.From, r.To)
 	case "marker":
 		c.Insert(r.At, cast.Event{Code: cast.Marker, Data: r.Label})
+		return "", nil
+	case "comment":
+		lines := strings.Split(strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(r.Label), "\n")
+		evs := make([]cast.Event, len(lines))
+		for i, l := range lines {
+			evs[i] = cast.Event{Code: cast.Comment, Data: l}
+		}
+		c.Insert(r.At, evs...)
 		return "", nil
 	case "trim_exit":
 		if n := c.TrimExit(); n > 0 {

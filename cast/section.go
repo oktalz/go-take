@@ -78,7 +78,7 @@ func (c *Cast) WriteV2(w io.Writer) error {
 	t := 0.0
 	for _, e := range c.Events {
 		t += e.Delay
-		if e.Code == Exit {
+		if e.Code == Exit || e.Code == Comment {
 			continue // not part of v2
 		}
 		if err := WriteEvent(bw, Event{Delay: t, Code: e.Code, Data: e.Data}); err != nil {

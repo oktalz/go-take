@@ -3,6 +3,7 @@ package cast
 // The .take format is the native gotake file format. It is line based text,
 // one header field or event per line, meant to be read and edited by hand:
 //
+//	# https://github.com/oktalz/go-take
 //	gotake 1
 //	term 80x24 xterm-256color
 //	title "demo"
@@ -11,6 +12,7 @@ package cast
 //	type   0.3 "ls -la" 0.08 0.07 0.11 0.09 0.1
 //	out    0.4 "\r\n"
 //	marker 0.0 "listing"
+//	# a note for whoever edits this file
 //
 // Every event line starts with a keyword and the delay in seconds since the
 // previous event ("80ms" and "1.5s" are accepted too). "type" holds a run of
@@ -23,8 +25,11 @@ package cast
 //
 // Strings are double quoted, with \e, \r, \n, \t, \\, \", \xHH, \uXXXX and
 // \UXXXXXXXX escapes. A word starting with '#' starts a comment that runs to the
-// end of the line. Reading and writing a file keeps every event and delay, but
-// not comments or "wait" lines.
+// end of the line. A comment on a line of its own is a Comment event: it keeps
+// its place between the events and takes no time. The first line of a written
+// file is always a comment with the gotake repository link; it is not read back
+// as an event. Reading and writing a file keeps every event, delay and comment
+// line, but not comments after other words or "wait" lines.
 
 import (
 	"bufio"
@@ -92,16 +97,34 @@ func NewEncoder(w io.Writer, f Format) Encoder {
 	return &takeEncoder{w: bufio.NewWriter(w)}
 }
 
-type castEncoder struct{ w *bufio.Writer }
+type castEncoder struct {
+	w    *bufio.Writer
+	wait float64 // delay of comments, added to the next event
+}
 
 func (e *castEncoder) WriteHeader(h Header) error {
 	h.Version = 3
 	return WriteHeader(e.w, h)
 }
 
-func (e *castEncoder) WriteEvent(ev Event) error { return WriteEvent(e.w, ev) }
-func (e *castEncoder) Flush() error              { return e.w.Flush() }
-func (e *castEncoder) Close() error              { return e.w.Flush() }
+// WriteEvent writes a comment as "# text" lines; its delay moves to the next event.
+func (e *castEncoder) WriteEvent(ev Event) error {
+	if ev.Code == Comment {
+		e.wait += ev.Delay
+		for _, l := range commentLines(ev.Data) {
+			if _, err := e.w.WriteString(l + "\n"); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	ev.Delay += e.wait
+	e.wait = 0
+	return WriteEvent(e.w, ev)
+}
+
+func (e *castEncoder) Flush() error { return e.w.Flush() }
+func (e *castEncoder) Close() error { return e.w.Flush() }
 
 // takeEncoder relies on bufio.Writer keeping the first write error, which Flush returns.
 type takeEncoder struct {
@@ -221,6 +244,15 @@ func (e *takeEncoder) writeRun() {
 
 // writeSingle writes one event as its own line.
 func (e *takeEncoder) writeSingle(ev Event) {
+	if ev.Code == Comment {
+		if ev.Delay > 0 {
+			e.line(keyword("wait"), FormatDelay(ev.Delay))
+		}
+		for _, l := range commentLines(ev.Data) {
+			e.line(l)
+		}
+		return
+	}
 	word, ok := takeWords[ev.Code]
 	if !ok {
 		e.line(keyword("event"), FormatDelay(ev.Delay), quoteTake(ev.Code), quoteString(ev.Data))
@@ -234,6 +266,26 @@ func (e *takeEncoder) writeSingle(ev Event) {
 	default:
 		e.line(keyword(word), FormatDelay(ev.Delay), quoteString(ev.Data))
 	}
+}
+
+// commentLines returns comment text as "# text" lines, one per line of text.
+func commentLines(text string) []string {
+	text = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(text)
+	lines := strings.Split(text, "\n")
+	for i, l := range lines {
+		if l = strings.TrimRight(l, " \t"); l == "" {
+			lines[i] = "#"
+		} else {
+			lines[i] = "# " + l
+		}
+	}
+	return lines
+}
+
+// commentText returns the text of a "# text" line: without the '#', the space after it and trailing space.
+func commentText(line string) string {
+	s := strings.TrimPrefix(strings.TrimSpace(line), "#")
+	return strings.TrimRight(strings.TrimPrefix(s, " "), " \t\r\n")
 }
 
 // quoteTake returns s as a .take word: simple names and numbers as they are, anything else quoted.
@@ -317,6 +369,13 @@ func readTake(data []byte) (*Cast, error) {
 	n := 0
 	for line := range strings.Lines(string(data)) {
 		n++
+		if t := strings.TrimSpace(line); strings.HasPrefix(t, "#") {
+			// a comment line is kept as an event, except the repository link written on top
+			if text := commentText(t); started || text != TakeRepoURL {
+				c.Events = append(c.Events, Event{Code: Comment, Data: text})
+			}
+			continue
+		}
 		toks, err := SplitLine(line)
 		if err != nil {
 			return nil, fmt.Errorf("line %d: %w", n, err)
