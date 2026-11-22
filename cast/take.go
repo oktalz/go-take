@@ -347,6 +347,13 @@ func isBareWord(s string) bool {
 	return true
 }
 
+// HasRepoLink reports whether the first line of data is the repository link
+// comment that the .take writer puts on top.
+func HasRepoLink(data []byte) bool {
+	first, _, _ := bytes.Cut(data, []byte("\n"))
+	return string(bytes.TrimSpace(first)) == "# "+TakeRepoURL
+}
+
 // isTake reports whether data is a .take file: its first line that is not
 // blank or a comment is "gotake ...".
 func isTake(data []byte) bool {

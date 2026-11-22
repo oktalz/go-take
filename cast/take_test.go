@@ -280,3 +280,17 @@ func TestCommentWriting(t *testing.T) {
 	// asciicast comments are not read back, the timing stays
 	sameEvents(t, []Event{{Delay: 0.75, Code: Output, Data: "x"}}, mustRead(t, buf.String()).Events)
 }
+
+func TestHasRepoLink(t *testing.T) {
+	for in, want := range map[string]bool{
+		"# " + TakeRepoURL + "\ngotake 1\n":   true,
+		"# " + TakeRepoURL + "  \r\ngotake 1": true,
+		"gotake 1\n# " + TakeRepoURL + "\n":   false,
+		"# my demo\ngotake 1\n":               false,
+		"":                                    false,
+	} {
+		if got := HasRepoLink([]byte(in)); got != want {
+			t.Errorf("HasRepoLink(%q) = %v, want %v", in, got, want)
+		}
+	}
+}

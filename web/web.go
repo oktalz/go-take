@@ -47,21 +47,36 @@ type Editor struct {
 	path    string
 	undo    []*cast.Cast
 	redo    []*cast.Cast
-	version int // incremented on every change
-	saved   int // version at last save
-	mu      sync.Mutex
+	version int    // incremented on every change
+	saved   int    // version at last save
+	notice  string // shown once, with the first state
+	// noLink is set while the .take file on disk lacks the repository link
+	// on its first line: saving is allowed without changes, to add it.
+	noLink bool
+	mu     sync.Mutex
 }
 
 // NewEditor loads path for editing. A missing file starts an empty recording.
+// For a .take file without the repository link on its first line, saving is
+// allowed even without changes, and adds the link.
 func NewEditor(path string) (*Editor, error) {
-	c, err := cast.Load(path)
+	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		c, err = cast.New(80, 24), nil
+		return &Editor{path: path, cast: cast.New(80, 24)}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &Editor{path: path, cast: c}, nil
+	c, err := cast.Read(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	ed := &Editor{path: path, cast: c}
+	if cast.FormatFor(path) == cast.FormatTake && !cast.HasRepoLink(data) {
+		ed.noLink = true
+		ed.notice = "the file has no repository link on its first line; save to add it"
+	}
+	return ed, nil
 }
 
 type state struct {
@@ -71,7 +86,9 @@ type state struct {
 	Secrets string `json:"secrets"`
 	// RepoURL is the comment always written on the first line of a .take file;
 	// the editor shows it as a fixed row that cannot be removed. Empty for .cast files.
-	RepoURL  string       `json:"repo_url,omitempty"`
+	RepoURL string `json:"repo_url,omitempty"`
+	// NoLink: the file on disk lacks the repository link, so Save is offered without changes.
+	NoLink   bool         `json:"no_link,omitempty"`
 	Header   cast.Header  `json:"header"`
 	Events   []cast.Event `json:"events"`
 	Version  int          `json:"version"`
@@ -91,7 +108,7 @@ func (ed *Editor) state(msg string) state {
 		repo = cast.TakeRepoURL
 	}
 	return state{
-		RepoURL: repo, Path: ed.path, Header: ed.cast.Header, Events: ev, Version: ed.version,
+		RepoURL: repo, NoLink: ed.noLink, Path: ed.path, Header: ed.cast.Header, Events: ev, Version: ed.version,
 		Dirty: ed.version != ed.saved, CanUndo: len(ed.undo) > 0, CanRedo: len(ed.redo) > 0,
 		Duration: ed.cast.Duration(), Message: msg, Secrets: cast.SecretPattern,
 	}
@@ -208,7 +225,8 @@ func (ed *Editor) Handler() http.Handler {
 	mux.HandleFunc("GET /api/state", func(w http.ResponseWriter, _ *http.Request) {
 		ed.mu.Lock()
 		defer ed.mu.Unlock()
-		writeJSON(w, ed.state(""))
+		writeJSON(w, ed.state(ed.notice))
+		ed.notice = ""
 	})
 	mux.HandleFunc("GET /recording", func(w http.ResponseWriter, _ *http.Request) {
 		ed.mu.Lock()
@@ -270,7 +288,12 @@ func (ed *Editor) Handler() http.Handler {
 			return
 		}
 		ed.saved = ed.version
-		writeJSON(w, ed.state("saved "+ed.path))
+		msg := "saved " + ed.path
+		if ed.noLink {
+			msg += ", with the repository link added"
+		}
+		ed.noLink = false
+		writeJSON(w, ed.state(msg))
 	})
 	return mux
 }

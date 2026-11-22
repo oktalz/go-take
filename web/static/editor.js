@@ -147,8 +147,9 @@
     $('repo-row').hidden = !S.repo_url;
     if (S.repo_url) { $('repo-link').href = S.repo_url; $('repo-link').textContent = S.repo_url; }
     $('dirty').hidden = !S.dirty;
-    $('btn-save').disabled = !S.dirty;
-    $('btn-save').title = S.dirty ? 'Save (Ctrl+S)' : 'No changes to save';
+    var canSave = S.dirty || S.no_link; // a file without the repository link can be saved to add it
+    $('btn-save').disabled = !canSave;
+    $('btn-save').title = S.dirty ? 'Save (Ctrl+S)' : S.no_link ? 'Save to add the repository link (Ctrl+S)' : 'No changes to save';
     $('btn-undo').disabled = !S.can_undo;
     $('btn-redo').disabled = !S.can_redo;
     $('stats').textContent = S.events.length + ' events · ' + fmt(S.duration) + ' · ' + S.header.term.cols + '×' + S.header.term.rows;
@@ -1287,7 +1288,7 @@
   function generalMenu() {
     var r = range();
     return [
-      { label: 'Save', kbd: 'Ctrl+S', disabled: !S.dirty, action: save },
+      { label: 'Save', kbd: 'Ctrl+S', disabled: !S.dirty && !S.no_link, action: save },
       { label: 'Undo', kbd: 'Ctrl+Z', disabled: !S.can_undo, action: undo },
       { label: 'Redo', kbd: 'Ctrl+Shift+Z', disabled: !S.can_redo, action: redo },
       { sep: true },
